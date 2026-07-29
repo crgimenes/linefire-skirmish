@@ -25,24 +25,23 @@ import (
 // is hit the same size.
 const shipScale = skirmish.ShipRadius / 22.0
 
-// factionAnchor is the tracer colour of each side, matching the two families the
-// hulls fall into.
-var factionAnchor = [skirmish.FactionCount]color.RGBA{
-	{0x80, 0xff, 0xff, 0xff}, // cool, like the player hull
-	{0xff, 0x5a, 0x4a, 0xff}, // warm, like the enemy hull
-}
+// palette is the stroke and fill one side flies in.
+type palette struct{ stroke, fill color.RGBA }
 
-// factionHueShift turns the hulls of one side into the other family. Faction B
-// flies linefire's art untouched — those hulls ARE its enemies — and faction A
-// gets the same art rotated round the colour wheel into the cool range the
-// player lives in.
+// factionPalette gives every ship its side's colours. Both pairs are linefire's
+// own — the player hull's cool pair and the enemy hull's warm one — so the fleet
+// keeps the game's look while the colour answers the question that matters in a
+// battle: whose side is that one on.
 //
-// A rotation, not a blend: mixing every colour toward one anchor was the obvious
-// thing and it was wrong — it drags saturation and brightness toward the anchor
-// too, so the whole fleet washed out and stopped looking like linefire. Rotating
-// the hue moves the family and leaves how bright and how saturated each hull is
-// exactly as it was authored, which is what the look is made of.
-var factionHueShift = [skirmish.FactionCount]float64{180, 0}
+// Colouring by TYPE was tried first and read badly. Each hull carries its own
+// hue in the art, which is identity in a game where every enemy is an enemy, but
+// here it meant a screen of five colours per side and no way to tell the sides
+// apart. The type still reads without colour: the silhouettes differ, and so do
+// their stroke widths.
+var factionPalette = [skirmish.FactionCount]palette{
+	{stroke: color.RGBA{0x80, 0xff, 0xff, 0xff}, fill: color.RGBA{0x00, 0x18, 0x20, 0xff}},
+	{stroke: color.RGBA{0xff, 0x5a, 0x4a, 0xff}, fill: color.RGBA{0x24, 0x0a, 0x08, 0xff}},
+}
 
 // hull is one type's art for one faction, meshed once at startup: the solid
 // geometry and the emissive copy that feeds the bloom.
@@ -125,7 +124,7 @@ func newOverlay(content fs.FS, w *skirmish.World, width, height int, debug bool,
 			return nil, fmt.Errorf("loading hull %q: %w", kind, err)
 		}
 		for f := range o.hulls {
-			layers := shiftHue(a.Layers, factionHueShift[f])
+			layers := paint(a.Layers, factionPalette[f])
 			o.hulls[f][kind] = hull{
 				body: render.BuildLayersMesh(layers),
 				glow: render.BuildGlowMesh(layers),
@@ -273,7 +272,7 @@ func (o *overlay) drawPortals(dst *ebiten.Image) {
 		effects.DrawPortal(dst, effects.Portal{
 			X: p.x, Y: p.y,
 			Radius:  portalRadius * min(age*portalOpenSpeed, 1),
-			Col:     bulletColor[p.faction],
+			Col:     factionPalette[p.faction].stroke,
 			Seconds: seconds,
 			Fade:    1 - age*age, // holds open, then goes quickly
 			DPR:     1,
@@ -329,10 +328,6 @@ func (o *overlay) drawShips(dst *ebiten.Image, emissive bool) {
 	}
 }
 
-// bulletColor is the tracer colour per faction: the side's anchor, so a shot
-// reads as coming from that side whatever hull fired it.
-var bulletColor = factionAnchor
-
 // hullAsset maps a profile kind to the asset that draws it. The grunt's profile
 // is named for the role it plays in linefire, where it is the enemy.
 func hullAsset(kind string) string {
@@ -342,80 +337,21 @@ func hullAsset(kind string) string {
 	return kind
 }
 
-// shiftHue returns a copy of the art with every colour rotated round the colour
-// wheel by degrees. Zero returns the art as authored.
-func shiftHue(layers []asset.Layer, degrees float64) []asset.Layer {
+// paint returns a copy of the art in one faction's colours. Everything else the
+// art carries — stroke width, glow, the paths themselves — is left alone, so the
+// hulls are still drawn exactly the way linefire draws them.
+func paint(layers []asset.Layer, p palette) []asset.Layer {
 	out := make([]asset.Layer, len(layers))
 	copy(out, layers)
-	if degrees == 0 {
-		return out
-	}
 	for i := range out {
-		out[i].Stroke = rotateHex(out[i].Stroke, degrees)
-		out[i].Fill = rotateHex(out[i].Fill, degrees)
+		out[i].Stroke = hex(p.stroke)
+		out[i].Fill = hex(p.fill)
 	}
 	return out
 }
 
-// rotateHex rotates one colour's hue, leaving its saturation and value alone and
-// passing through anything the renderer treats as invisible.
-func rotateHex(hex string, degrees float64) string {
-	c, visible := render.ParseColor(hex)
-	if !visible {
-		return hex
-	}
-	h, sat, val := rgbToHSV(c)
-	r, g, b := hsvToRGB(math.Mod(h+degrees, 360), sat, val)
-	return fmt.Sprintf("#%02x%02x%02x", r, g, b)
-}
-
-func rgbToHSV(c color.RGBA) (h, s, v float64) {
-	r, g, b := float64(c.R)/255, float64(c.G)/255, float64(c.B)/255
-	high := max(r, g, b)
-	low := min(r, g, b)
-	span := high - low
-	v = high
-	if high > 0 {
-		s = span / high
-	}
-	if span == 0 {
-		return 0, s, v
-	}
-	switch high {
-	case r:
-		h = math.Mod((g-b)/span, 6)
-	case g:
-		h = (b-r)/span + 2
-	default:
-		h = (r-g)/span + 4
-	}
-	h *= 60
-	if h < 0 {
-		h += 360
-	}
-	return h, s, v
-}
-
-func hsvToRGB(h, s, v float64) (r, g, b uint8) {
-	span := v * s
-	x := span * (1 - math.Abs(math.Mod(h/60, 2)-1))
-	m := v - span
-	var rf, gf, bf float64
-	switch {
-	case h < 60:
-		rf, gf, bf = span, x, 0
-	case h < 120:
-		rf, gf, bf = x, span, 0
-	case h < 180:
-		rf, gf, bf = 0, span, x
-	case h < 240:
-		rf, gf, bf = 0, x, span
-	case h < 300:
-		rf, gf, bf = x, 0, span
-	default:
-		rf, gf, bf = span, 0, x
-	}
-	return uint8((rf + m) * 255), uint8((gf + m) * 255), uint8((bf + m) * 255)
+func hex(c color.RGBA) string {
+	return fmt.Sprintf("#%02x%02x%02x", c.R, c.G, c.B)
 }
 
 // drawBullets draws shots as short tracers along their velocity, which reads
@@ -424,7 +360,7 @@ func (o *overlay) drawBullets(dst *ebiten.Image, emissive bool) {
 	const tracer = 2.5 // how many ticks of travel the streak represents
 	for i := range o.world.Bullets {
 		b := &o.world.Bullets[i]
-		col := bulletColor[b.Faction]
+		col := factionPalette[b.Faction].stroke
 		width := float32(2)
 		if emissive {
 			width = 3
