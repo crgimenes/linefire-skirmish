@@ -30,3 +30,7 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Working backlog: too volatile to publish, and a list in a public repo reads as
+# a promise. It stays a local file.
+TODO.md
