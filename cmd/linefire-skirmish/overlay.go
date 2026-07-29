@@ -25,18 +25,24 @@ import (
 // is hit the same size.
 const shipScale = skirmish.ShipRadius / 22.0
 
-// factionAnchor is the colour each side is pulled toward. Every hull keeps the
-// hue that says which TYPE it is — the rusher is magenta, the sniper yellow —
-// blended far enough toward its side's anchor that friend and foe still read
-// apart across a busy screen.
+// factionAnchor is the tracer colour of each side, matching the two families the
+// hulls fall into.
 var factionAnchor = [skirmish.FactionCount]color.RGBA{
-	{0x80, 0xff, 0xff, 0xff}, // the player hull's cyan
-	{0xff, 0x5a, 0x4a, 0xff}, // the enemy hull's red
+	{0x80, 0xff, 0xff, 0xff}, // cool, like the player hull
+	{0xff, 0x5a, 0x4a, 0xff}, // warm, like the enemy hull
 }
 
-// factionMix is how far a hull's own colour is pulled toward its side's anchor.
-// High enough that a glance reads the side, low enough that the type survives.
-const factionMix = 0.6
+// factionHueShift turns the hulls of one side into the other family. Faction B
+// flies linefire's art untouched — those hulls ARE its enemies — and faction A
+// gets the same art rotated round the colour wheel into the cool range the
+// player lives in.
+//
+// A rotation, not a blend: mixing every colour toward one anchor was the obvious
+// thing and it was wrong — it drags saturation and brightness toward the anchor
+// too, so the whole fleet washed out and stopped looking like linefire. Rotating
+// the hue moves the family and leaves how bright and how saturated each hull is
+// exactly as it was authored, which is what the look is made of.
+var factionHueShift = [skirmish.FactionCount]float64{180, 0}
 
 // hull is one type's art for one faction, meshed once at startup: the solid
 // geometry and the emissive copy that feeds the bloom.
@@ -119,7 +125,7 @@ func newOverlay(content fs.FS, w *skirmish.World, width, height int, debug bool,
 			return nil, fmt.Errorf("loading hull %q: %w", kind, err)
 		}
 		for f := range o.hulls {
-			layers := tintLayers(a.Layers, factionAnchor[f])
+			layers := shiftHue(a.Layers, factionHueShift[f])
 			o.hulls[f][kind] = hull{
 				body: render.BuildLayersMesh(layers),
 				glow: render.BuildGlowMesh(layers),
@@ -336,30 +342,80 @@ func hullAsset(kind string) string {
 	return kind
 }
 
-// tintLayers returns a copy of the art with every colour pulled toward anchor.
-// The asset itself is left alone: the same layers are tinted twice, once per
-// faction.
-func tintLayers(layers []asset.Layer, anchor color.RGBA) []asset.Layer {
+// shiftHue returns a copy of the art with every colour rotated round the colour
+// wheel by degrees. Zero returns the art as authored.
+func shiftHue(layers []asset.Layer, degrees float64) []asset.Layer {
 	out := make([]asset.Layer, len(layers))
 	copy(out, layers)
+	if degrees == 0 {
+		return out
+	}
 	for i := range out {
-		out[i].Stroke = tintHex(out[i].Stroke, anchor)
-		out[i].Fill = tintHex(out[i].Fill, anchor)
+		out[i].Stroke = rotateHex(out[i].Stroke, degrees)
+		out[i].Fill = rotateHex(out[i].Fill, degrees)
 	}
 	return out
 }
 
-// tintHex blends one colour toward anchor, leaving anything the renderer treats
-// as invisible untouched.
-func tintHex(hex string, anchor color.RGBA) string {
+// rotateHex rotates one colour's hue, leaving its saturation and value alone and
+// passing through anything the renderer treats as invisible.
+func rotateHex(hex string, degrees float64) string {
 	c, visible := render.ParseColor(hex)
 	if !visible {
 		return hex
 	}
-	mix := func(a, b uint8) uint8 {
-		return uint8(float64(a)*(1-factionMix) + float64(b)*factionMix)
+	h, sat, val := rgbToHSV(c)
+	r, g, b := hsvToRGB(math.Mod(h+degrees, 360), sat, val)
+	return fmt.Sprintf("#%02x%02x%02x", r, g, b)
+}
+
+func rgbToHSV(c color.RGBA) (h, s, v float64) {
+	r, g, b := float64(c.R)/255, float64(c.G)/255, float64(c.B)/255
+	high := max(r, g, b)
+	low := min(r, g, b)
+	span := high - low
+	v = high
+	if high > 0 {
+		s = span / high
 	}
-	return fmt.Sprintf("#%02x%02x%02x", mix(c.R, anchor.R), mix(c.G, anchor.G), mix(c.B, anchor.B))
+	if span == 0 {
+		return 0, s, v
+	}
+	switch high {
+	case r:
+		h = math.Mod((g-b)/span, 6)
+	case g:
+		h = (b-r)/span + 2
+	default:
+		h = (r-g)/span + 4
+	}
+	h *= 60
+	if h < 0 {
+		h += 360
+	}
+	return h, s, v
+}
+
+func hsvToRGB(h, s, v float64) (r, g, b uint8) {
+	span := v * s
+	x := span * (1 - math.Abs(math.Mod(h/60, 2)-1))
+	m := v - span
+	var rf, gf, bf float64
+	switch {
+	case h < 60:
+		rf, gf, bf = span, x, 0
+	case h < 120:
+		rf, gf, bf = x, span, 0
+	case h < 180:
+		rf, gf, bf = 0, span, x
+	case h < 240:
+		rf, gf, bf = 0, x, span
+	case h < 300:
+		rf, gf, bf = x, 0, span
+	default:
+		rf, gf, bf = span, 0, x
+	}
+	return uint8((rf + m) * 255), uint8((gf + m) * 255), uint8((bf + m) * 255)
 }
 
 // drawBullets draws shots as short tracers along their velocity, which reads
