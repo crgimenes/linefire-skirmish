@@ -24,11 +24,9 @@ func (w *World) decide(i int) Order {
 		return Order{}
 	}
 
-	target := w.nearestEnemy(i)
+	target := w.acquire(i)
 	if target < 0 {
-		// Nobody left to fight: drift back to the middle and wait for respawns.
-		face := math.Atan2(w.Cfg.Height/2-s.Y, w.Cfg.Width/2-s.X)
-		return Order{Face: face, Move: face, Thrust: 0.5}
+		return w.patrol(s)
 	}
 
 	t := &w.Ships[target]
@@ -59,8 +57,55 @@ func (w *World) decide(i int) Order {
 		Face:   face,
 		Move:   move,
 		Thrust: 1,
-		Fire:   aimed && dist < s.EngageRange(),
+		Fire:   aimed && dist < s.radar,
 	}
+}
+
+// acquire is the sensor: it returns the nearest enemy the ship can actually see,
+// or -1. A ship engages only inside its radar, and once engaged it holds the
+// contact for a grace period after it slips back out — so a fast target cannot
+// shake a pursuer by stepping over the line — with the radar widened for as long
+// as it is hunting. Losing the contact for good resets the reach and sends the
+// ship back to patrolling.
+func (w *World) acquire(i int) int {
+	s := &w.Ships[i]
+	target := w.nearestEnemyWithin(i, s.radar)
+
+	if s.combat {
+		if target >= 0 {
+			s.grace = combatGrace
+			return target
+		}
+		s.grace--
+		if s.grace > 0 {
+			return -1 // still hunting, but with nothing in reach to aim at
+		}
+		s.combat = false
+		s.radar = s.EngageRange()
+		return -1
+	}
+
+	if target < 0 {
+		return -1
+	}
+	s.combat = true
+	s.grace = combatGrace
+	s.radar = max(s.radar, s.EngageRange()*radarCombatMul)
+	return target
+}
+
+// patrol cruises an idle ship along a heading it commits to for a while, so it
+// reads as searching the arena instead of jittering on the spot. It flies slower
+// than it fights, and takes a fresh heading when the timer runs out.
+func (w *World) patrol(s *Ship) Order {
+	s.wanderCD--
+	if s.wanderCD <= 0 {
+		s.wanderHead = wrapAngle(s.wanderHead + (w.rng.Float64()*2-1)*patrolTurnRange)
+		s.wanderCD = patrolHold + w.rng.IntN(patrolHold)
+	}
+	move := w.separate(s, s.wanderHead)
+	move = w.avoidEdges(s, move)
+	return Order{Face: move, Move: move, Thrust: patrolThrust}
 }
 
 // aimAt returns the heading that puts a shot where the target is going, rather
@@ -138,11 +183,11 @@ func (w *World) separate(s *Ship, move float64) float64 {
 	return math.Atan2(ay, ax)
 }
 
-// nearestEnemy returns the index of the closest living ship of another faction,
-// or -1 when there is none.
-func (w *World) nearestEnemy(i int) int {
+// nearestEnemyWithin returns the index of the closest living ship of another
+// faction inside reach, or -1 when there is none.
+func (w *World) nearestEnemyWithin(i int, reach float64) int {
 	s := &w.Ships[i]
-	best, bestDist := -1, math.Inf(1)
+	best, bestDist := -1, reach
 	for j := range w.Ships {
 		o := &w.Ships[j]
 		if !o.Alive() || o.Faction == s.Faction {

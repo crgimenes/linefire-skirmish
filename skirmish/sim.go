@@ -65,6 +65,23 @@ const (
 	// accident. The gap is the fight.
 	leadAccuracy = 0.6
 
+	// Sensors, taken from linefire's enemies. A ship engages only what its radar
+	// reaches; once engaged it keeps chasing for a grace period after the contact
+	// slips out, and its radar widens the moment it commits, so a fast target
+	// cannot shake it by stepping over the line. Being hit widens the radar too,
+	// capped, so a ship shot from beyond its own reach turns and answers instead
+	// of being picked off.
+	radarCombatMul = 2.0
+	radarHitBoost  = 1.6
+	radarMaxMul    = 2.5
+	combatGrace    = 120 // ticks a ship keeps hunting after the contact is lost
+
+	// Patrolling: an idle ship commits to a heading for a while and cruises at a
+	// fraction of its top speed, so it reads as searching rather than jittering.
+	patrolThrust    = 0.4
+	patrolHold      = 90  // ticks a heading is kept before it changes
+	patrolTurnRange = 0.9 // radians the heading can swing when it does
+
 	// A portal is not precise: it drops a ship somewhere out in the arena rather
 	// than on a marked spot. spawnCenterHole is the share of the way out from the
 	// centre that stays clear, so arrivals never land in the middle of the screen;
@@ -95,18 +112,29 @@ type Ship struct {
 	cool    int // ticks until the gun is ready
 	respawn int // ticks until revival; only meaningful while HP is 0
 
+	radar      float64 // current engage range; widens on contact and on being hit
+	combat     bool    // hunting: holds a contact through the grace period
+	grace      int     // ticks of hunting left once the contact is out of range
+	wanderHead float64 // heading held while patrolling
+	wanderCD   int     // ticks before that heading changes
+
 	// prof is resolved once at spawn rather than looked up per tick, and keeps
 	// the stepping free of map access.
 	prof ship.Profile
 }
 
 // MaxSpeed, EngageRange, Standoff, FireEvery and ShotSpeed are the ship's
-// profile in arena units.
+// profile in arena units. EngageRange is the profile's, before anything that
+// happens in the battle widens it; Radar is what the ship can actually see now.
 func (s *Ship) MaxSpeed() float64    { return s.prof.SpeedMul * speedScale }
 func (s *Ship) EngageRange() float64 { return s.prof.Radar * rangeScale }
-func (s *Ship) Standoff() float64    { return s.prof.Standoff * rangeScale }
-func (s *Ship) ShotSpeed() float64   { return s.prof.ShotSpeed * speedScale }
-func (s *Ship) FireEvery() int       { return max(int(float64(s.prof.FireEvery)*fireRateScale), 1) }
+
+// Radar is the ship's current reach, which starts at its profile's and grows
+// while it is engaged or under fire.
+func (s *Ship) Radar() float64     { return s.radar }
+func (s *Ship) Standoff() float64  { return s.prof.Standoff * rangeScale }
+func (s *Ship) ShotSpeed() float64 { return s.prof.ShotSpeed * speedScale }
+func (s *Ship) FireEvery() int     { return max(int(float64(s.prof.FireEvery)*fireRateScale), 1) }
 
 // Alive reports whether the ship is in the fight this tick.
 func (s *Ship) Alive() bool { return s.HP > 0 }
@@ -202,6 +230,10 @@ func (w *World) newShip(id int, f Faction, kind string, x, y float64) Ship {
 		Angle:   wrapAngle(w.rng.Float64() * 2 * math.Pi),
 		HP:      prof.HP,
 		prof:    prof,
+
+		radar:      prof.Radar * rangeScale,
+		wanderHead: wrapAngle(w.rng.Float64() * 2 * math.Pi),
+		wanderCD:   patrolHold + w.rng.IntN(patrolHold),
 	}
 }
 
@@ -372,6 +404,7 @@ func (w *World) resolveHits() {
 				continue
 			}
 			s.HP -= shotDamage
+			s.radar = min(s.radar*radarHitBoost, s.EngageRange()*radarMaxMul)
 			hit = true
 			if s.HP <= 0 {
 				s.HP = 0

@@ -167,6 +167,100 @@ func TestBothSidesFieldEveryType(t *testing.T) {
 	}
 }
 
+// clearArena empties a world so a test can place exactly the ships it cares
+// about, without a battle going on around them.
+func clearArena(w *World) {
+	for i := range w.Ships {
+		w.Ships[i].HP = 0
+		w.Ships[i].respawn = 1 << 30 // never arrives during the test
+	}
+}
+
+// A ship must not turn to face something it cannot see. Once it does see one, it
+// commits: the radar widens, so a contact that steps just back over the line
+// stays held instead of being dropped the same tick.
+func TestSensorsOnlyReachAsFarAsTheRadar(t *testing.T) {
+	w := New(testConfig(21))
+	clearArena(w)
+	w.Ships[0] = w.newShip(0, FactionA, "enemy", 200, 200)
+	hunter := &w.Ships[0]
+	base := hunter.EngageRange()
+
+	w.Ships[1] = w.newShip(1, FactionB, "enemy", 200+base*1.2, 200)
+	if got := w.acquire(0); got >= 0 {
+		t.Fatalf("engaged a contact %.0f away, past a radar of %.0f", base*1.2, base)
+	}
+	if hunter.combat {
+		t.Fatal("a ship with nothing in reach should not be in combat")
+	}
+
+	w.Ships[1].X = 200 + base*0.5
+	if got := w.acquire(0); got != 1 {
+		t.Fatalf("acquire returned %d for a contact well inside the radar", got)
+	}
+	if !hunter.combat {
+		t.Fatal("acquiring a contact should put the ship in combat")
+	}
+	if hunter.radar <= base {
+		t.Errorf("radar is %.0f after engaging, no wider than the %.0f it started at", hunter.radar, base)
+	}
+
+	// Just outside the profile's reach, but inside the widened one: still held.
+	w.Ships[1].X = 200 + base*1.2
+	if got := w.acquire(0); got != 1 {
+		t.Fatalf("acquire returned %d: a contact inside the widened radar was dropped", got)
+	}
+}
+
+// A ship shot from beyond its own reach has to be able to answer, so being hit
+// widens the radar — up to a cap, or a single duel would eventually let a ship
+// see the whole arena.
+func TestBeingHitWidensTheRadar(t *testing.T) {
+	w := New(testConfig(22))
+	clearArena(w)
+	w.Ships[0] = w.newShip(0, FactionA, "enemy", 300, 300)
+	victim := &w.Ships[0]
+	base := victim.EngageRange()
+
+	for range 20 {
+		victim.HP = victim.prof.HP // keep it alive through the volley
+		w.Bullets = append(w.Bullets, Bullet{Faction: FactionB, X: victim.X, Y: victim.Y, life: bulletLife})
+		w.resolveHits()
+	}
+	if victim.radar <= base {
+		t.Errorf("radar still %.0f after taking fire, from a base of %.0f", victim.radar, base)
+	}
+	if cap := base * radarMaxMul; victim.radar > cap+1e-9 {
+		t.Errorf("radar grew to %.0f, past the %.0f cap", victim.radar, cap)
+	}
+}
+
+// An idle ship searches: it holds a heading for a while rather than jittering,
+// and cruises at a fraction of the speed it fights at.
+func TestIdleShipsPatrol(t *testing.T) {
+	w := New(testConfig(23))
+	clearArena(w)
+	w.Ships[0] = w.newShip(0, FactionA, "enemy", 400, 400)
+	lone := &w.Ships[0]
+
+	first := w.decide(0)
+	if first.Thrust >= 1 {
+		t.Errorf("a patrolling ship is at full thrust (%.2f)", first.Thrust)
+	}
+	for range patrolHold / 2 {
+		if got := w.decide(0); math.Abs(wrapAngle(got.Move-first.Move)) > 1e-9 {
+			t.Fatalf("patrol heading wandered from %.3f to %.3f inside its hold", first.Move, got.Move)
+		}
+	}
+	held := lone.wanderHead
+	for range patrolHold * 2 {
+		w.decide(0)
+	}
+	if lone.wanderHead == held {
+		t.Error("patrol heading never changed across two hold periods")
+	}
+}
+
 // Deaths is what the overlay hangs an explosion on, so it has to report the spot
 // the ship was actually destroyed at, and only for the tick it happened.
 func TestDeathsReportWhereAShipDied(t *testing.T) {
