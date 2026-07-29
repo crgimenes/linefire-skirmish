@@ -63,73 +63,59 @@ func TestBattleSustainsItself(t *testing.T) {
 	}
 }
 
-// A portal drops its ship somewhere out in the arena: never in the middle of the
-// screen, and away from whatever is already flying. Both hold for the opening
-// roster and for every respawn afterwards, so the check runs over a whole battle.
-func TestPortalsDropShipsApartAndOffCentre(t *testing.T) {
+// A portal opens somewhere out in the arena: never in the middle of the screen,
+// and clear of everything already flying or already promised a spot. The opening
+// wave and every respawn go through the same path, so the check runs over a whole
+// battle. What is asserted is the point at the moment it is CHOSEN — ships drift
+// while the vortex is open, and one wandering under a portal is a hazard of the
+// battle, not a placement fault.
+func TestPortalsOpenApartAndOffCentre(t *testing.T) {
 	cfg := testConfig(11)
 	w := New(cfg)
 	cx, cy := cfg.Width/2, cfg.Height/2
 	holeX, holeY := spawnCenterHole*(cx-ShipRadius), spawnCenterHole*(cy-ShipRadius)
 
-	checkArrival := func(s *Ship) {
-		t.Helper()
-		dx, dy := math.Abs(s.X-cx)/holeX, math.Abs(s.Y-cy)/holeY
-		if math.Hypot(dx, dy) < 1 {
-			t.Errorf("tick %d: ship %d arrived at %.1f,%.1f, inside the clear centre", w.Tick, s.ID, s.X, s.Y)
-		}
-		for i := range w.Ships {
-			o := &w.Ships[i]
-			if o.ID == s.ID || !o.Alive() {
-				continue
-			}
-			if d := math.Hypot(o.X-s.X, o.Y-s.Y); d < 2*ShipRadius {
-				t.Errorf("tick %d: ship %d arrived %.1f from ship %d", w.Tick, s.ID, d, o.ID)
-			}
-		}
-	}
-
-	for i := range w.Ships {
-		checkArrival(&w.Ships[i])
-	}
-
-	// Watch respawns: a ship that was dead last tick and is alive now just arrived.
-	wasDead := make([]bool, len(w.Ships))
+	opened := 0
 	for range 3000 {
 		w.Step()
-		for i := range w.Ships {
-			s := &w.Ships[i]
-			if wasDead[i] && s.Alive() {
-				checkArrival(s)
+		for _, a := range w.Arrivals() {
+			opened++
+			dx, dy := math.Abs(a.X-cx)/holeX, math.Abs(a.Y-cy)/holeY
+			if math.Hypot(dx, dy) < 1 {
+				t.Fatalf("tick %d: portal opened at %.1f,%.1f, inside the clear centre", w.Tick, a.X, a.Y)
 			}
-			wasDead[i] = !s.Alive()
+			for i := range w.Ships {
+				o := &w.Ships[i]
+				if !o.Alive() || math.Hypot(o.X-a.X, o.Y-a.Y) >= 2*ShipRadius {
+					continue
+				}
+				t.Fatalf("tick %d: portal opened on top of ship %d", w.Tick, o.ID)
+			}
 		}
+	}
+	if opened < len(w.Ships) {
+		t.Fatalf("only %d portals opened in 3000 ticks, fewer than the %d ships", opened, len(w.Ships))
 	}
 }
 
-// The whole point of the scatter is that arrivals are not bunched: measure it
-// against what plain uniform placement would give.
-func TestArrivalsBeatUniformScatter(t *testing.T) {
-	cfg := testConfig(5)
-	spread := func(w *World) float64 {
-		worst := math.Inf(1)
-		for i := range w.Ships {
-			for j := i + 1; j < len(w.Ships); j++ {
-				d := math.Hypot(w.Ships[i].X-w.Ships[j].X, w.Ships[i].Y-w.Ships[j].Y)
-				worst = min(worst, d)
-			}
-		}
-		return worst
+// Best-candidate sampling has to earn the draws it costs: over a busy arena it
+// must put portals further from the nearest ship than a single blind draw would.
+func TestBestCandidateBeatsASingleDraw(t *testing.T) {
+	w := New(testConfig(5))
+	for range 400 {
+		w.Step() // a populated, moving arena to place into
 	}
 
-	w := New(cfg)
-	uniform := New(cfg)
-	for i := range uniform.Ships {
-		uniform.Ships[i].X = uniform.rng.Float64() * cfg.Width
-		uniform.Ships[i].Y = uniform.rng.Float64() * cfg.Height
+	const trials = 200
+	var chosen, blind float64
+	for range trials {
+		x, y := w.spawnPoint()
+		chosen += w.distToNearestShip(x, y)
+		x, y = w.arrivalPoint()
+		blind += w.distToNearestShip(x, y)
 	}
-	if spread(w) <= spread(uniform) {
-		t.Errorf("closest pair %.1f apart, no better than uniform placement at %.1f", spread(w), spread(uniform))
+	if chosen <= blind {
+		t.Errorf("best-candidate averaged %.0f px of clearance, a single draw %.0f", chosen/trials, blind/trials)
 	}
 }
 
@@ -137,6 +123,9 @@ func TestArrivalsBeatUniformScatter(t *testing.T) {
 // the ship was actually destroyed at, and only for the tick it happened.
 func TestDeathsReportWhereAShipDied(t *testing.T) {
 	w := New(testConfig(4))
+	for range portalLead + openingStagger + 2 {
+		w.Step() // let the opening wave come through its portals
+	}
 	victim := &w.Ships[0]
 	victim.HP = 1
 	x, y := victim.X, victim.Y
@@ -182,7 +171,7 @@ func TestDestroyedShipRespawns(t *testing.T) {
 
 func TestResizeKeepsShipsInside(t *testing.T) {
 	w := New(testConfig(9))
-	for range 120 {
+	for range 300 {
 		w.Step()
 	}
 	w.Resize(400, 300)

@@ -35,18 +35,35 @@ type hull struct {
 	glow *render.Mesh
 }
 
+const (
+	// A portal stays open a little past the ship it delivers, so the vortex is
+	// visibly there first, throws something out, and then closes.
+	portalFrames    = 70
+	portalRadius    = 46.0 // rim, in arena pixels
+	portalOpenSpeed = 4.0  // how much of its life it spends widening
+)
+
+// portal is one vortex the overlay is drawing. It is presentation only: the sim
+// announced where a ship is coming out and has no further interest.
+type portal struct {
+	x, y    float64
+	faction skirmish.Faction
+	left    int // frames before it closes
+}
+
 // overlay is the Ebitengine game: a transparent, click-through window covering
 // the monitor, on which the simulation is drawn. It owns nothing about the
 // battle itself — that lives in the skirmish package.
 type overlay struct {
-	world  *skirmish.World
-	hulls  [skirmish.FactionCount]hull
-	fx     *effects.Pool
-	glow   *render.Glow
-	gui    minigui.Context
-	win    minigui.Window
-	panel  image.Rectangle
-	report func(*skirmish.World)
+	world   *skirmish.World
+	hulls   [skirmish.FactionCount]hull
+	fx      *effects.Pool
+	portals []portal
+	glow    *render.Glow
+	gui     minigui.Context
+	win     minigui.Window
+	panel   image.Rectangle
+	report  func(*skirmish.World)
 
 	width, height int
 	paused        bool
@@ -110,6 +127,11 @@ func (o *overlay) Update() error {
 		for _, d := range o.world.Deaths() {
 			o.fx.Explosion(d.X, d.Y)
 		}
+		for _, a := range o.world.Arrivals() {
+			o.portals = append(o.portals, portal{x: a.X, y: a.Y, faction: a.Faction, left: portalFrames})
+		}
+		o.stepPortals()
+		o.emitExhaust()
 		o.fx.Step()
 		o.report(o.world)
 	}
@@ -164,7 +186,54 @@ func fxView(glow bool) effects.View {
 	return effects.View{DPR: 1, PixelScale: 1, Glow: glow}
 }
 
+// emitExhaust trails engine exhaust behind every ship burning this tick, out of
+// the side the thrust came from — these ships strafe, so the plume does not
+// always leave through the tail.
+func (o *overlay) emitExhaust() {
+	for i := range o.world.Ships {
+		s := &o.world.Ships[i]
+		if !s.Alive() || s.Thrust <= 0 {
+			continue
+		}
+		fx, fy := math.Cos(s.Burn), math.Sin(s.Burn)
+		o.fx.Thruster(s.X-fx*skirmish.ShipRadius, s.Y-fy*skirmish.ShipRadius, fx, fy)
+	}
+}
+
+// stepPortals ages the open vortices and drops the closed ones.
+func (o *overlay) stepPortals() {
+	kept := o.portals[:0]
+	for _, p := range o.portals {
+		p.left--
+		if p.left <= 0 {
+			continue
+		}
+		kept = append(kept, p)
+	}
+	o.portals = kept
+}
+
+// drawPortals renders each open vortex in its faction's colour, growing as it
+// opens and fading as it closes, so a ship is thrown out of something that was
+// already there rather than appearing beside a flash.
+func (o *overlay) drawPortals(dst *ebiten.Image) {
+	seconds := float64(o.world.Tick) / float64(ebiten.TPS())
+	for _, p := range o.portals {
+		age := 1 - float64(p.left)/portalFrames // 0 when it opens, 1 as it closes
+		effects.DrawPortal(dst, effects.Portal{
+			X: p.x, Y: p.y,
+			Radius:  portalRadius * min(age*portalOpenSpeed, 1),
+			Col:     bulletColor[p.faction],
+			Seconds: seconds,
+			Fade:    1 - age*age, // holds open, then goes quickly
+			DPR:     1,
+			Scale:   1,
+		})
+	}
+}
+
 func (o *overlay) Draw(screen *ebiten.Image) {
+	o.drawPortals(screen) // under everything: ships come OUT of it
 	o.drawShips(screen, false)
 	o.drawBullets(screen, false)
 	o.fx.Draw(screen, fxView(false))

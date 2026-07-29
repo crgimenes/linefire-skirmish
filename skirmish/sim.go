@@ -41,6 +41,12 @@ const (
 	edgeMargin   = 100.0 // steer back once this close to the border
 	respawnDelay = 120   // ticks a destroyed ship waits before rejoining
 
+	// portalLead is how long the vortex is open before the ship drops out of it,
+	// and openingStagger spreads the first wave so the battle does not begin with
+	// every portal firing on the same frame.
+	portalLead     = 36
+	openingStagger = 90
+
 	// Separation, borrowed from flocking: a short-range push away from whatever is
 	// nearby, so ships circling the same target stop flying through each other.
 	// Only separation — cohesion and alignment would make the battle a flock.
@@ -72,6 +78,13 @@ type Ship struct {
 	VX, VY  float64
 	Angle   float64 // facing, radians, 0 = +X
 	HP      int
+
+	// Thrust and Burn are what the engines did last tick: how hard, and in which
+	// direction. They are kept on the ship, not just in the Order, because the
+	// exhaust is drawn from them a frame later.
+	Thrust float64 // 0..1, zero while coasting
+	Burn   float64 // radians
+
 	cool    int // ticks until the gun is ready
 	respawn int // ticks until revival; only meaningful while HP is 0
 }
@@ -96,6 +109,14 @@ type Config struct {
 	Seed          uint64
 }
 
+// Arrival is a portal opening: a ship is on its way in, and this is where it
+// will come out. It is announced portalLead ticks before the ship exists, so
+// whatever draws the portal has time to open it before anything flies out.
+type Arrival struct {
+	X, Y    float64
+	Faction Faction
+}
+
 // Death is a ship destroyed during the last Step. The sim has no idea what a
 // renderer will do with it — play an explosion, log a kill, tell another process
 // over IPC — it just reports that it happened and where.
@@ -112,13 +133,16 @@ type World struct {
 	Bullets []Bullet
 	Kills   [FactionCount]int
 
-	rng    *rand.Rand
-	orders []Order // reused per tick so stepping allocates nothing
-	deaths []Death // this tick's kills; reused for the same reason
+	rng      *rand.Rand
+	orders   []Order   // reused per tick so stepping allocates nothing
+	deaths   []Death   // this tick's kills; reused for the same reason
+	arrivals []Arrival // this tick's portals, likewise
 }
 
-// New builds a world with both rosters already through their portals, scattered
-// over the arena.
+// New builds a world whose rosters have not arrived yet: every ship starts
+// destroyed with a short, staggered timer, so the opening is portals dropping a
+// horde in rather than ships blinking into place, and the first arrival goes
+// through exactly the same path as the thousandth.
 func New(cfg Config) *World {
 	if cfg.PerSide < 1 {
 		cfg.PerSide = 1
@@ -133,18 +157,20 @@ func New(cfg Config) *World {
 	}
 	for f := range FactionCount {
 		for range cfg.PerSide {
-			w.Ships = append(w.Ships, w.spawnShip(len(w.Ships), f))
+			id := len(w.Ships)
+			w.Ships = append(w.Ships, Ship{
+				ID:      id,
+				Faction: f,
+				respawn: portalLead + 1 + w.rng.IntN(openingStagger),
+			})
 		}
 	}
 	return w
 }
 
-// spawnShip drops a fresh ship through a portal: no home side, no marked spot,
-// just somewhere out in the arena, away from the centre of the screen and as far
-// as the draw manages from every ship already flying. Facing is random too — a
-// portal does not aim what it throws.
-func (w *World) spawnShip(id int, f Faction) Ship {
-	x, y := w.spawnPoint()
+// newShip is a ship coming out of a portal at (x, y). Facing is random: a portal
+// does not aim what it throws.
+func (w *World) newShip(id int, f Faction, x, y float64) Ship {
 	return Ship{
 		ID:      id,
 		Faction: f,
@@ -183,13 +209,16 @@ func (w *World) arrivalPoint() (float64, float64) {
 	return clamp(x, ShipRadius, w.Cfg.Width-ShipRadius), clamp(y, ShipRadius, w.Cfg.Height-ShipRadius)
 }
 
-// distToNearestShip measures how clear a candidate point is. Only living ships
-// count: a wreck waiting to respawn is not on screen to crowd anything.
+// distToNearestShip measures how clear a candidate point is. Ships already
+// flying count, and so do the ones whose portal is open but who have not dropped
+// out of it yet — otherwise two portals opening within a second of each other
+// would happily pick the same spot. A wreck with no portal yet has no position
+// to crowd anything with.
 func (w *World) distToNearestShip(x, y float64) float64 {
 	best := math.Inf(1)
 	for i := range w.Ships {
 		s := &w.Ships[i]
-		if !s.Alive() {
+		if !s.Alive() && s.respawn > portalLead {
 			continue
 		}
 		d := math.Hypot(s.X-x, s.Y-y)
@@ -205,10 +234,15 @@ func (w *World) distToNearestShip(x, y float64) float64 {
 // world's own and is emptied by the next one.
 func (w *World) Deaths() []Death { return w.deaths }
 
+// Arrivals lists the portals that opened during the last Step, on the same terms
+// as Deaths.
+func (w *World) Arrivals() []Arrival { return w.arrivals }
+
 // Step advances the simulation by one tick.
 func (w *World) Step() {
 	w.Tick++
 	w.deaths = w.deaths[:0]
+	w.arrivals = w.arrivals[:0]
 
 	// Every ship decides from the same snapshot, so the outcome does not depend
 	// on roster order — a ship early in the slice must not fight an arena that
@@ -235,10 +269,11 @@ func (w *World) apply(i int, o Order) {
 
 	s.Angle = turnToward(s.Angle, o.Face, turnRate)
 
+	s.Thrust, s.Burn = 0, o.Move
 	if o.Thrust > 0 {
-		t := min(o.Thrust, 1)
-		s.VX += math.Cos(o.Move) * accel * t
-		s.VY += math.Sin(o.Move) * accel * t
+		s.Thrust = min(o.Thrust, 1)
+		s.VX += math.Cos(o.Move) * accel * s.Thrust
+		s.VY += math.Sin(o.Move) * accel * s.Thrust
 	}
 	s.VX *= drag
 	s.VY *= drag
@@ -328,8 +363,11 @@ func (w *World) resolveHits() {
 	w.Bullets = kept
 }
 
-// reviveDead brings destroyed ships back at their faction's home band, so the
-// battle never runs out of combatants.
+// reviveDead runs the arrival of every ship waiting to fly, so the battle never
+// runs out of combatants. A portal opens portalLead ticks ahead of the ship it
+// delivers: the point is chosen then, announced, and parked on the dead ship —
+// X and Y are free while it has no hull — so the vortex and the ship agree on
+// where it comes out.
 func (w *World) reviveDead() {
 	for i := range w.Ships {
 		s := &w.Ships[i]
@@ -337,10 +375,13 @@ func (w *World) reviveDead() {
 			continue
 		}
 		s.respawn--
-		if s.respawn > 0 {
-			continue
+		switch {
+		case s.respawn == portalLead:
+			s.X, s.Y = w.spawnPoint()
+			w.arrivals = append(w.arrivals, Arrival{X: s.X, Y: s.Y, Faction: s.Faction})
+		case s.respawn <= 0:
+			*s = w.newShip(s.ID, s.Faction, s.X, s.Y)
 		}
-		*s = w.spawnShip(s.ID, s.Faction)
 	}
 }
 
