@@ -53,7 +53,7 @@ type art struct {
 	body   *render.Mesh
 	glow   *render.Mesh
 	origin asset.Point
-	radius float64 // the asset's collision circle, what anything drawn around it is sized from
+	reach  float64 // how far the drawing itself reaches, for anything drawn around it
 }
 
 // draw places the art at a world point, rotated, at linefire's scale.
@@ -95,9 +95,13 @@ const (
 	portalMoteSize = effects.DefaultMoteSize * 2 / 3
 )
 
-// pickupRingColor is the accent on the ring around loot — linefire's pickup
-// green, so a drop reads as something to collect rather than something to shoot.
-var pickupRingColor = color.RGBA{0x80, 0xff, 0xb0, 0xff}
+// The ring around loot: linefire's pickup green, so a drop reads as something to
+// collect rather than something to shoot, at a steady brightness since it does
+// not pulse.
+var pickupRingColor = color.RGBA{0x80, 0xff, 0xb0, 0xa0}
+
+// dropRingWidth is the ring stroke, matching linefire's.
+const dropRingWidth = 1.5
 
 // portal is one vortex the overlay is drawing. It is presentation only: the sim
 // announced where a ship is coming out and has no further interest.
@@ -165,7 +169,7 @@ func newOverlay(content fs.FS, w *skirmish.World, width, height int, debug bool,
 				body:   render.BuildLayersMesh(layers),
 				glow:   render.BuildGlowMesh(layers),
 				origin: a.Origin,
-				radius: a.Radius(),
+				reach:  a.DrawRadius(),
 			}
 		}
 	}
@@ -182,7 +186,7 @@ func newOverlay(content fs.FS, w *skirmish.World, width, height int, debug bool,
 			body:   render.BuildLayersMesh(a.Layers),
 			glow:   render.BuildGlowMesh(a.Layers),
 			origin: a.Origin,
-			radius: a.Radius(),
+			reach:  a.DrawRadius(),
 		}
 	}
 
@@ -339,10 +343,16 @@ func (o *overlay) drawPortals(dst *ebiten.Image) {
 	}
 }
 
-// drawDrops renders the loot lying in the arena, each under the breathing ring
-// linefire uses to say something is worth flying to.
+// drawDrops renders the loot lying in the arena, each inside a ring that says it
+// is worth flying to.
+//
+// The ring is STILL, unlike linefire's, and sized off how far the drawing itself
+// reaches rather than off the hitbox. A pickup's hitbox is nearly twice its icon,
+// so a ring on it floated well outside the shape; and because the icon is small
+// and not perfectly centred in that space, a ring that breathed made the gap
+// shift asymmetrically — which reads as the centre wandering. Still and tight
+// fixes both, and it comes out smaller than a hull, as it is in the game.
 func (o *overlay) drawDrops(dst *ebiten.Image, emissive bool) {
-	seconds := float64(o.world.Tick) / float64(ebiten.TPS())
 	for i := range o.world.Drops {
 		d := &o.world.Drops[i]
 		a, ok := o.pickups[d.Ref]
@@ -351,9 +361,8 @@ func (o *overlay) drawDrops(dst *ebiten.Image, emissive bool) {
 		}
 		a.draw(dst, d.X, d.Y, 0, emissive)
 		if !emissive {
-			// The ring is sized off the pickup's own collision circle and swells in
-			// world units, exactly as linefire's does.
-			effects.DrawPulseRing(dst, d.X, d.Y, a.radius*artScale, pickupRingColor, seconds, artScale, 1)
+			vector.StrokeCircle(dst, float32(d.X), float32(d.Y),
+				float32(a.reach*artScale), dropRingWidth, pickupRingColor, true)
 		}
 	}
 }
