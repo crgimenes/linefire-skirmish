@@ -6,8 +6,10 @@ import (
 	"image/color"
 	"io/fs"
 	"math"
+	"math/rand/v2"
 
 	"github.com/crgimenes/linefire-skirmish/skirmish"
+	"github.com/crgimenes/linefire/effects"
 	"github.com/crgimenes/linefire/filoio"
 	"github.com/crgimenes/linefire/render"
 	"github.com/crgimenes/minigui"
@@ -39,6 +41,7 @@ type hull struct {
 type overlay struct {
 	world  *skirmish.World
 	hulls  [skirmish.FactionCount]hull
+	fx     *effects.Pool
 	glow   *render.Glow
 	gui    minigui.Context
 	win    minigui.Window
@@ -60,8 +63,13 @@ func (errQuit) Error() string { return "quit" }
 // newOverlay meshes the hulls and prepares the toolbar. content holds the
 // embedded gameassets tree.
 func newOverlay(content fs.FS, w *skirmish.World, width, height int, debug bool, report func(*skirmish.World)) (*overlay, error) {
+	// The effects run off the battle's own seed. They feed nothing back into the
+	// simulation, so this is not what makes a run reproducible — it just means the
+	// picture replays along with the fight rather than only the fight.
+	fxRandom := rand.New(rand.NewPCG(w.Cfg.Seed, ^w.Cfg.Seed)) // #nosec G404 -- cosmetic, and seeded on purpose
 	o := &overlay{
 		world:  w,
+		fx:     effects.New(effects.DefaultMax, fxRandom.Float64),
 		glow:   render.NewGlow(),
 		width:  width,
 		height: height,
@@ -99,6 +107,10 @@ func (o *overlay) Update() error {
 
 	if !o.paused {
 		o.world.Step()
+		for _, d := range o.world.Deaths() {
+			o.fx.Explosion(d.X, d.Y)
+		}
+		o.fx.Step()
 		o.report(o.world)
 	}
 
@@ -146,9 +158,16 @@ func (o *overlay) setPassthrough(enabled bool) {
 	ebiten.SetWindowMousePassthrough(enabled)
 }
 
+// fxView places the particle pool on screen. The arena is the screen, one world
+// unit to one pixel, so the camera is the identity and both scales are 1.
+func fxView(glow bool) effects.View {
+	return effects.View{DPR: 1, PixelScale: 1, Glow: glow}
+}
+
 func (o *overlay) Draw(screen *ebiten.Image) {
 	o.drawShips(screen, false)
 	o.drawBullets(screen, false)
+	o.fx.Draw(screen, fxView(false))
 
 	// The bloom is the whole look: the crisp geometry above, plus an additive
 	// halo built from the same shapes drawn into the emissive buffer.
@@ -160,6 +179,7 @@ func (o *overlay) Draw(screen *ebiten.Image) {
 	}, func(emissive *ebiten.Image) {
 		o.drawShips(emissive, true)
 		o.drawBullets(emissive, true)
+		o.fx.Draw(emissive, fxView(true))
 	})
 
 	o.gui.Render(screen)

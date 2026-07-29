@@ -96,6 +96,14 @@ type Config struct {
 	Seed          uint64
 }
 
+// Death is a ship destroyed during the last Step. The sim has no idea what a
+// renderer will do with it — play an explosion, log a kill, tell another process
+// over IPC — it just reports that it happened and where.
+type Death struct {
+	X, Y    float64
+	Faction Faction
+}
+
 // World is the whole simulation state.
 type World struct {
 	Cfg     Config
@@ -106,6 +114,7 @@ type World struct {
 
 	rng    *rand.Rand
 	orders []Order // reused per tick so stepping allocates nothing
+	deaths []Death // this tick's kills; reused for the same reason
 }
 
 // New builds a world with both rosters already through their portals, scattered
@@ -192,9 +201,14 @@ func (w *World) distToNearestShip(x, y float64) float64 {
 	return best
 }
 
+// Deaths lists the ships destroyed during the last Step. The slice is the
+// world's own and is emptied by the next one.
+func (w *World) Deaths() []Death { return w.deaths }
+
 // Step advances the simulation by one tick.
 func (w *World) Step() {
 	w.Tick++
+	w.deaths = w.deaths[:0]
 
 	// Every ship decides from the same snapshot, so the outcome does not depend
 	// on roster order — a ship early in the slice must not fight an arena that
@@ -303,6 +317,7 @@ func (w *World) resolveHits() {
 				s.HP = 0
 				s.respawn = respawnDelay
 				w.Kills[b.Faction]++
+				w.deaths = append(w.deaths, Death{X: s.X, Y: s.Y, Faction: s.Faction})
 			}
 			break
 		}

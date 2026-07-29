@@ -133,6 +133,37 @@ func TestArrivalsBeatUniformScatter(t *testing.T) {
 	}
 }
 
+// Deaths is what the overlay hangs an explosion on, so it has to report the spot
+// the ship was actually destroyed at, and only for the tick it happened.
+func TestDeathsReportWhereAShipDied(t *testing.T) {
+	w := New(testConfig(4))
+	victim := &w.Ships[0]
+	victim.HP = 1
+	x, y := victim.X, victim.Y
+	w.Bullets = append(w.Bullets, Bullet{
+		Faction: FactionB,
+		X:       x, Y: y,
+		life: bulletLife,
+	})
+
+	w.Step()
+	deaths := w.Deaths()
+	if len(deaths) != 1 {
+		t.Fatalf("one ship died, Deaths reported %d", len(deaths))
+	}
+	if deaths[0].Faction != FactionA {
+		t.Errorf("death reported for faction %v, want %v", deaths[0].Faction, FactionA)
+	}
+	if math.Hypot(deaths[0].X-x, deaths[0].Y-y) > maxSpeed {
+		t.Errorf("death at %.1f,%.1f, nowhere near the ship at %.1f,%.1f", deaths[0].X, deaths[0].Y, x, y)
+	}
+
+	w.Step()
+	if len(w.Deaths()) != 0 {
+		t.Errorf("deaths from an earlier tick are still being reported: %d", len(w.Deaths()))
+	}
+}
+
 func TestDestroyedShipRespawns(t *testing.T) {
 	w := New(testConfig(3))
 	s := &w.Ships[0]
