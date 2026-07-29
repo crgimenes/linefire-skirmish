@@ -29,7 +29,10 @@ const (
 // Tuning. These are the whole balance of the fight; keeping them together makes
 // the feel of the battle one screen of numbers instead of a hunt through code.
 const (
-	ShipRadius = 15.0 // hit radius in arena pixels
+	// ShipRadius is the player hull's own collision circle, 22 world units, at
+	// linefire's world-to-pixel scale. Taking it from the art rather than picking a
+	// number is what keeps what is drawn and what is hit the same size.
+	ShipRadius = 22 * 0.6
 	accel      = 0.15 // thrust acceleration
 
 	// Linefire's profiles are written for a tight cave; this arena is a whole

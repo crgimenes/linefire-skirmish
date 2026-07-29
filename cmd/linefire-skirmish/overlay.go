@@ -21,10 +21,11 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
-// shipScale maps the 64x64 hull art onto the simulation's hit radius: the assets
-// declare a collision circle of ~22 units, so this keeps what is drawn and what
-// is hit the same size.
-const shipScale = skirmish.ShipRadius / 22.0
+// artScale is linefire's own world-to-pixel factor. Everything drawn here goes
+// through it rather than through a factor derived on this side: that is what
+// keeps a hull, a ring and a portal the size they are in the game, and it is why
+// the sim's ShipRadius is stated in the same terms.
+const artScale = render.CamScale
 
 // palette is the stroke and fill one side flies in.
 type palette struct{ stroke, fill color.RGBA }
@@ -44,11 +45,29 @@ var factionPalette = [skirmish.FactionCount]palette{
 	{stroke: color.RGBA{0xff, 0x5a, 0x4a, 0xff}, fill: color.RGBA{0x24, 0x0a, 0x08, 0xff}},
 }
 
-// hull is one type's art for one faction, meshed once at startup: the solid
-// geometry and the emissive copy that feeds the bloom.
-type hull struct {
-	body *render.Mesh
-	glow *render.Mesh
+// art is one asset drawn: the solid geometry, the emissive copy that feeds the
+// bloom, and the two numbers the asset itself carries. Both are read off the
+// asset rather than assumed — the hulls are 64x64 around 32,32 but a power-up is
+// 48x48 around 24,24, and a hard-coded centre puts it visibly off its own ring.
+type art struct {
+	body   *render.Mesh
+	glow   *render.Mesh
+	origin asset.Point
+	radius float64 // the asset's collision circle, what anything drawn around it is sized from
+}
+
+// draw places the art at a world point, rotated, at linefire's scale.
+func (a art) draw(dst *ebiten.Image, x, y, angle float64, emissive bool) {
+	mesh := a.body
+	if emissive {
+		mesh = a.glow
+	}
+	var geo ebiten.GeoM
+	geo.Translate(-a.origin.X, -a.origin.Y)
+	geo.Scale(artScale, artScale)
+	geo.Rotate(angle)
+	geo.Translate(x, y)
+	mesh.Draw(dst, geo, true)
 }
 
 const (
@@ -60,9 +79,9 @@ const (
 	portalOpenSpeed = 4.0 // how much of its life it spends widening
 
 	// portalRadius starts from linefire's — a 24-unit collision circle with the
-	// vortex drawn beyond it — scaled the way the hulls are, opened out further so
-	// the convergence has room to be seen.
-	portalRadius = (24 + 24) * shipScale
+	// vortex drawn beyond it — at linefire's scale, opened out further so the
+	// convergence has room to be seen.
+	portalRadius = (24 + 24) * artScale
 
 	// portalMoteSpeed makes the motes stream in hard: several full trips from rim
 	// to centre inside the portal's half second, so the arrival reads as energy
@@ -74,10 +93,6 @@ const (
 	// portalMoteSize is two thirds of linefire's: finer motes on a rim this wide,
 	// so the convergence reads as a stream of sparks rather than a ring of dots.
 	portalMoteSize = effects.DefaultMoteSize * 2 / 3
-
-	// dropRingRadius is what the pulse ring encircles: the drop art at the same
-	// scale the hulls are drawn at.
-	dropRingRadius = 22 * shipScale
 )
 
 // pickupRingColor is the accent on the ring around loot — linefire's pickup
@@ -97,8 +112,8 @@ type portal struct {
 // battle itself — that lives in the skirmish package.
 type overlay struct {
 	world   *skirmish.World
-	hulls   [skirmish.FactionCount]map[string]hull
-	pickups map[string]hull
+	hulls   [skirmish.FactionCount]map[string]art
+	pickups map[string]art
 	fx      *effects.Pool
 	portals []portal
 	glow    *render.Glow
@@ -137,7 +152,7 @@ func newOverlay(content fs.FS, w *skirmish.World, width, height int, debug bool,
 		win:    minigui.Window{Title: "Skirmish", X: 8, Y: 8, Open: true, NoClose: true},
 	}
 	for f := range o.hulls {
-		o.hulls[f] = map[string]hull{}
+		o.hulls[f] = map[string]art{}
 	}
 	for _, kind := range ship.Kinds() {
 		a, err := filoio.LoadAssetFS(content, "gameassets", hullAsset(kind))
@@ -146,24 +161,28 @@ func newOverlay(content fs.FS, w *skirmish.World, width, height int, debug bool,
 		}
 		for f := range o.hulls {
 			layers := paint(a.Layers, factionPalette[f])
-			o.hulls[f][kind] = hull{
-				body: render.BuildLayersMesh(layers),
-				glow: render.BuildGlowMesh(layers),
+			o.hulls[f][kind] = art{
+				body:   render.BuildLayersMesh(layers),
+				glow:   render.BuildGlowMesh(layers),
+				origin: a.Origin,
+				radius: a.Radius(),
 			}
 		}
 	}
 	// Loot keeps its authored colours: on a ship the colour answers "whose side",
 	// but on the ground it answers "what is it", which is what the art already
 	// says. Only the refs the drop table can actually produce are loaded.
-	o.pickups = map[string]hull{}
+	o.pickups = map[string]art{}
 	for _, ref := range loot.Refs() {
 		a, err := filoio.LoadAssetFS(content, "gameassets", ref)
 		if err != nil {
 			return nil, fmt.Errorf("loading pickup %q: %w", ref, err)
 		}
-		o.pickups[ref] = hull{
-			body: render.BuildLayersMesh(a.Layers),
-			glow: render.BuildGlowMesh(a.Layers),
+		o.pickups[ref] = art{
+			body:   render.BuildLayersMesh(a.Layers),
+			glow:   render.BuildGlowMesh(a.Layers),
+			origin: a.Origin,
+			radius: a.Radius(),
 		}
 	}
 
@@ -326,21 +345,15 @@ func (o *overlay) drawDrops(dst *ebiten.Image, emissive bool) {
 	seconds := float64(o.world.Tick) / float64(ebiten.TPS())
 	for i := range o.world.Drops {
 		d := &o.world.Drops[i]
-		art, ok := o.pickups[d.Ref]
+		a, ok := o.pickups[d.Ref]
 		if !ok {
 			continue
 		}
-		mesh := art.body
-		if emissive {
-			mesh = art.glow
-		}
-		var geo ebiten.GeoM
-		geo.Translate(-32, -32)
-		geo.Scale(shipScale, shipScale)
-		geo.Translate(d.X, d.Y)
-		mesh.Draw(dst, geo, true)
+		a.draw(dst, d.X, d.Y, 0, emissive)
 		if !emissive {
-			effects.DrawPulseRing(dst, d.X, d.Y, dropRingRadius, pickupRingColor, seconds, 1, 1)
+			// The ring is sized off the pickup's own collision circle and swells in
+			// world units, exactly as linefire's does.
+			effects.DrawPulseRing(dst, d.X, d.Y, a.radius*artScale, pickupRingColor, seconds, artScale, 1)
 		}
 	}
 }
@@ -385,17 +398,8 @@ func (o *overlay) drawShips(dst *ebiten.Image, emissive bool) {
 		if !s.Alive() {
 			continue
 		}
-		art := o.hulls[s.Faction][s.Kind]
-		mesh := art.body
-		if emissive {
-			mesh = art.glow
-		}
-		var geo ebiten.GeoM
-		geo.Translate(-32, -32) // the hulls are 64x64 with the origin at the centre
-		geo.Scale(shipScale, shipScale)
-		geo.Rotate(s.Angle + math.Pi/2) // the art points up; angle 0 is +X
-		geo.Translate(s.X, s.Y)
-		mesh.Draw(dst, geo, true)
+		// The art points up and angle 0 is +X, so the hull turns a quarter more.
+		o.hulls[s.Faction][s.Kind].draw(dst, s.X, s.Y, s.Angle+math.Pi/2, emissive)
 	}
 }
 
