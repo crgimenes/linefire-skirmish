@@ -41,10 +41,11 @@ const (
 	edgeMargin   = 100.0 // steer back once this close to the border
 	respawnDelay = 120   // ticks a destroyed ship waits before rejoining
 
-	// portalLead is how long the vortex is open before the ship drops out of it,
-	// and openingStagger spreads the first wave so the battle does not begin with
-	// every portal firing on the same frame.
-	portalLead     = 36
+	// PortalLead is how long the vortex is open before the ship drops out of it.
+	// It is exported because whatever draws the portal has to outlast it, or the
+	// vortex would close before delivering anything. openingStagger spreads the
+	// first wave so the battle does not begin with every portal firing at once.
+	PortalLead     = 8
 	openingStagger = 90
 
 	// Separation, borrowed from flocking: a short-range push away from whatever is
@@ -110,7 +111,7 @@ type Config struct {
 }
 
 // Arrival is a portal opening: a ship is on its way in, and this is where it
-// will come out. It is announced portalLead ticks before the ship exists, so
+// will come out. It is announced PortalLead ticks before the ship exists, so
 // whatever draws the portal has time to open it before anything flies out.
 type Arrival struct {
 	X, Y    float64
@@ -161,7 +162,7 @@ func New(cfg Config) *World {
 			w.Ships = append(w.Ships, Ship{
 				ID:      id,
 				Faction: f,
-				respawn: portalLead + 1 + w.rng.IntN(openingStagger),
+				respawn: PortalLead + 1 + w.rng.IntN(openingStagger),
 			})
 		}
 	}
@@ -218,7 +219,7 @@ func (w *World) distToNearestShip(x, y float64) float64 {
 	best := math.Inf(1)
 	for i := range w.Ships {
 		s := &w.Ships[i]
-		if !s.Alive() && s.respawn > portalLead {
+		if !s.Alive() && s.respawn > PortalLead {
 			continue
 		}
 		d := math.Hypot(s.X-x, s.Y-y)
@@ -364,7 +365,7 @@ func (w *World) resolveHits() {
 }
 
 // reviveDead runs the arrival of every ship waiting to fly, so the battle never
-// runs out of combatants. A portal opens portalLead ticks ahead of the ship it
+// runs out of combatants. A portal opens PortalLead ticks ahead of the ship it
 // delivers: the point is chosen then, announced, and parked on the dead ship —
 // X and Y are free while it has no hull — so the vortex and the ship agree on
 // where it comes out.
@@ -376,7 +377,7 @@ func (w *World) reviveDead() {
 		}
 		s.respawn--
 		switch {
-		case s.respawn == portalLead:
+		case s.respawn == PortalLead:
 			s.X, s.Y = w.spawnPoint()
 			w.arrivals = append(w.arrivals, Arrival{X: s.X, Y: s.Y, Faction: s.Faction})
 		case s.respawn <= 0:

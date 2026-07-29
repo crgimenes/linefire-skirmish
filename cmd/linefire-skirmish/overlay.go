@@ -36,11 +36,17 @@ type hull struct {
 }
 
 const (
-	// A portal stays open a little past the ship it delivers, so the vortex is
-	// visibly there first, throws something out, and then closes.
-	portalFrames    = 70
-	portalRadius    = 46.0 // rim, in arena pixels
-	portalOpenSpeed = 4.0  // how much of its life it spends widening
+	// A portal is a snap: it flares open, throws a ship out, and is gone inside a
+	// third of a second. Its life is built from the sim's lead so it can never
+	// close before delivering anything.
+	portalHold      = 12 // frames the vortex lingers once the ship is out
+	portalFrames    = skirmish.PortalLead + portalHold
+	portalOpenSpeed = 4.0 // how much of its life it spends widening
+
+	// portalRadius is linefire's: its portal asset carries a 24-unit collision
+	// circle and the vortex is drawn 12 beyond it. Scaling that the same way the
+	// hulls are scaled keeps the portal in proportion to the ships coming out.
+	portalRadius = (24 + 12) * shipScale
 )
 
 // portal is one vortex the overlay is drawing. It is presentation only: the sim
@@ -186,18 +192,40 @@ func fxView(glow bool) effects.View {
 	return effects.View{DPR: 1, PixelScale: 1, Glow: glow}
 }
 
-// emitExhaust trails engine exhaust behind every ship burning this tick, out of
-// the side the thrust came from — these ships strafe, so the plume does not
-// always leave through the tail.
+// exhaustCone is how far off the nose a burn can be and still show a plume.
+// Unlike linefire's ship, these thrust in a direction independent of where they
+// point, and lighting the engines while sliding sideways or backing off looks
+// nothing like the game — so only a burn that is roughly forward is drawn, and
+// it leaves through the tail.
+const exhaustCone = math.Pi / 3
+
+// emitExhaust trails engine exhaust from the tail of every ship accelerating
+// forward this tick.
 func (o *overlay) emitExhaust() {
 	for i := range o.world.Ships {
 		s := &o.world.Ships[i]
 		if !s.Alive() || s.Thrust <= 0 {
 			continue
 		}
-		fx, fy := math.Cos(s.Burn), math.Sin(s.Burn)
+		if math.Abs(shortestAngle(s.Burn-s.Angle)) > exhaustCone {
+			continue
+		}
+		fx, fy := math.Cos(s.Angle), math.Sin(s.Angle)
 		o.fx.Thruster(s.X-fx*skirmish.ShipRadius, s.Y-fy*skirmish.ShipRadius, fx, fy)
 	}
+}
+
+// shortestAngle normalizes to (-pi, pi], so a difference across the seam is
+// small rather than nearly a full turn.
+func shortestAngle(a float64) float64 {
+	a = math.Mod(a, 2*math.Pi)
+	if a > math.Pi {
+		return a - 2*math.Pi
+	}
+	if a <= -math.Pi {
+		return a + 2*math.Pi
+	}
+	return a
 }
 
 // stepPortals ages the open vortices and drops the closed ones.

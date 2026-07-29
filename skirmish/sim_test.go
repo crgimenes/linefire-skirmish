@@ -123,7 +123,7 @@ func TestBestCandidateBeatsASingleDraw(t *testing.T) {
 // the ship was actually destroyed at, and only for the tick it happened.
 func TestDeathsReportWhereAShipDied(t *testing.T) {
 	w := New(testConfig(4))
-	for range portalLead + openingStagger + 2 {
+	for range PortalLead + openingStagger + 2 {
 		w.Step() // let the opening wave come through its portals
 	}
 	victim := &w.Ships[0]
