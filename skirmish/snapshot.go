@@ -9,6 +9,14 @@ type ShipState struct {
 	Y       float64 `json:"y"`
 	Angle   float64 `json:"angle"`
 	HP      int     `json:"hp"`
+	Energy  int     `json:"energy"`
+}
+
+// DropState is one piece of loot lying in the arena.
+type DropState struct {
+	Ref string  `json:"ref"`
+	X   float64 `json:"x"`
+	Y   float64 `json:"y"`
 }
 
 // Snapshot is the machine-readable state of the battle at one tick. It is what
@@ -26,6 +34,7 @@ type Snapshot struct {
 	Kills   []int       `json:"kills"`
 	Bullets int         `json:"bullets"`
 	Ships   []ShipState `json:"ships"`
+	Drops   []DropState `json:"drops"`
 }
 
 // Snapshot captures the current state.
@@ -52,7 +61,11 @@ func (w *World) Snapshot() Snapshot {
 			Y:       sh.Y,
 			Angle:   sh.Angle,
 			HP:      sh.HP,
+			Energy:  sh.Energy.Level,
 		})
+	}
+	for i := range w.Drops {
+		s.Drops = append(s.Drops, DropState{Ref: w.Drops[i].Ref, X: w.Drops[i].X, Y: w.Drops[i].Y})
 	}
 	return s
 }

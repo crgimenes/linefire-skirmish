@@ -12,6 +12,7 @@ import (
 	"github.com/crgimenes/linefire/asset"
 	"github.com/crgimenes/linefire/effects"
 	"github.com/crgimenes/linefire/filoio"
+	"github.com/crgimenes/linefire/loot"
 	"github.com/crgimenes/linefire/render"
 	"github.com/crgimenes/linefire/ship"
 	"github.com/crgimenes/minigui"
@@ -73,7 +74,15 @@ const (
 	// portalMoteSize is two thirds of linefire's: finer motes on a rim this wide,
 	// so the convergence reads as a stream of sparks rather than a ring of dots.
 	portalMoteSize = effects.DefaultMoteSize * 2 / 3
+
+	// dropRingRadius is what the pulse ring encircles: the drop art at the same
+	// scale the hulls are drawn at.
+	dropRingRadius = 22 * shipScale
 )
+
+// pickupRingColor is the accent on the ring around loot — linefire's pickup
+// green, so a drop reads as something to collect rather than something to shoot.
+var pickupRingColor = color.RGBA{0x80, 0xff, 0xb0, 0xff}
 
 // portal is one vortex the overlay is drawing. It is presentation only: the sim
 // announced where a ship is coming out and has no further interest.
@@ -89,6 +98,7 @@ type portal struct {
 type overlay struct {
 	world   *skirmish.World
 	hulls   [skirmish.FactionCount]map[string]hull
+	pickups map[string]hull
 	fx      *effects.Pool
 	portals []portal
 	glow    *render.Glow
@@ -142,6 +152,21 @@ func newOverlay(content fs.FS, w *skirmish.World, width, height int, debug bool,
 			}
 		}
 	}
+	// Loot keeps its authored colours: on a ship the colour answers "whose side",
+	// but on the ground it answers "what is it", which is what the art already
+	// says. Only the refs the drop table can actually produce are loaded.
+	o.pickups = map[string]hull{}
+	for _, ref := range loot.Refs() {
+		a, err := filoio.LoadAssetFS(content, "gameassets", ref)
+		if err != nil {
+			return nil, fmt.Errorf("loading pickup %q: %w", ref, err)
+		}
+		o.pickups[ref] = hull{
+			body: render.BuildLayersMesh(a.Layers),
+			glow: render.BuildGlowMesh(a.Layers),
+		}
+	}
+
 	face, err := minigui.SystemFace(14)
 	if err == nil {
 		o.gui.SetFace(face)
@@ -295,6 +320,31 @@ func (o *overlay) drawPortals(dst *ebiten.Image) {
 	}
 }
 
+// drawDrops renders the loot lying in the arena, each under the breathing ring
+// linefire uses to say something is worth flying to.
+func (o *overlay) drawDrops(dst *ebiten.Image, emissive bool) {
+	seconds := float64(o.world.Tick) / float64(ebiten.TPS())
+	for i := range o.world.Drops {
+		d := &o.world.Drops[i]
+		art, ok := o.pickups[d.Ref]
+		if !ok {
+			continue
+		}
+		mesh := art.body
+		if emissive {
+			mesh = art.glow
+		}
+		var geo ebiten.GeoM
+		geo.Translate(-32, -32)
+		geo.Scale(shipScale, shipScale)
+		geo.Translate(d.X, d.Y)
+		mesh.Draw(dst, geo, true)
+		if !emissive {
+			effects.DrawPulseRing(dst, d.X, d.Y, dropRingRadius, pickupRingColor, seconds, 1, 1)
+		}
+	}
+}
+
 func (o *overlay) Draw(screen *ebiten.Image) {
 	// Order is the effect: portals under everything because ships come out of
 	// them, then shots and exhaust, then the hulls on top. A muzzle flash or a
@@ -302,6 +352,7 @@ func (o *overlay) Draw(screen *ebiten.Image) {
 	// stuck to the hull; drawn under, the ship covers the origin and what is left
 	// is the part that should be seen.
 	o.drawPortals(screen)
+	o.drawDrops(screen, false)
 	o.drawBullets(screen, false)
 	o.fx.Draw(screen, fxView(false))
 	o.drawShips(screen, false)
@@ -314,6 +365,7 @@ func (o *overlay) Draw(screen *ebiten.Image) {
 		Iterations: 2,
 		AntiAlias:  true,
 	}, func(emissive *ebiten.Image) {
+		o.drawDrops(emissive, true)
 		o.drawBullets(emissive, true)
 		o.fx.Draw(emissive, fxView(true))
 		o.drawShips(emissive, true)

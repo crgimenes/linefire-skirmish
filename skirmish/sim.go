@@ -12,7 +12,9 @@ import (
 	"math"
 	"math/rand/v2"
 
+	"github.com/crgimenes/linefire/loot"
 	"github.com/crgimenes/linefire/ship"
+	"github.com/crgimenes/linefire/weapon"
 )
 
 // Faction is a side in the battle.
@@ -48,10 +50,17 @@ const (
 
 	// PortalLead is how long a ship is announced before it exists. It is exported
 	// because whatever draws the arrival has that long to play it: the vortex runs
-	// its whole life inside this window and is gone by the time the hull appears. openingStagger spreads the
-	// first wave so the battle does not begin with every portal firing at once.
+	// its whole life inside this window and is gone by the time the hull appears.
+	// openingStagger spreads the first wave so the battle does not begin with every
+	// portal firing at once.
 	PortalLead     = 30
 	openingStagger = 90
+
+	// Loot: a wreck leaves its drop where it fell, and it waits a while for
+	// somebody to fly over it. Long enough to be worth crossing the arena for,
+	// short enough that a busy battle does not carpet the screen.
+	dropLife   = 900 // ticks a drop waits to be collected
+	healAmount = 1   // hull points a heal pickup puts back
 
 	// Separation, borrowed from flocking: a short-range push away from whatever is
 	// nearby, so ships circling the same target stop flying through each other.
@@ -112,6 +121,11 @@ type Ship struct {
 	cool    int // ticks until the gun is ready
 	respawn int // ticks until revival; only meaningful while HP is 0
 
+	// Energy is the ammunition pool every weapon but the plain gun draws on. It is
+	// shared with linefire, prices and all, so a missile costs a ship the same
+	// here as it does there.
+	Energy weapon.Pool
+
 	radar      float64 // current engage range; widens on contact and on being hit
 	combat     bool    // hunting: holds a contact through the grace period
 	grace      int     // ticks of hunting left once the contact is out of range
@@ -164,6 +178,15 @@ type Arrival struct {
 	Faction Faction
 }
 
+// Drop is loot lying in the arena, waiting for somebody to fly over it. Ref is
+// the shared table's name for what it is — "powerup", "firepower", "wpn_missile"
+// — so both games call the same thing by the same name.
+type Drop struct {
+	Ref  string
+	X, Y float64
+	life int
+}
+
 // Death is a ship destroyed during the last Step. The sim has no idea what a
 // renderer will do with it — play an explosion, log a kill, tell another process
 // over IPC — it just reports that it happened and where.
@@ -179,6 +202,8 @@ type World struct {
 	Ships   []Ship
 	Bullets []Bullet
 	Kills   [FactionCount]int
+
+	Drops []Drop
 
 	rng      *rand.Rand
 	orders   []Order   // reused per tick so stepping allocates nothing
@@ -231,6 +256,7 @@ func (w *World) newShip(id int, f Faction, kind string, x, y float64) Ship {
 		HP:      prof.HP,
 		prof:    prof,
 
+		Energy:     weapon.NewPool(0),
 		radar:      prof.Radar * rangeScale,
 		wanderHead: wrapAngle(w.rng.Float64() * 2 * math.Pi),
 		wanderCD:   patrolHold + w.rng.IntN(patrolHold),
@@ -313,7 +339,57 @@ func (w *World) Step() {
 
 	w.moveBullets()
 	w.resolveHits()
+	w.stepDrops()
 	w.reviveDead()
+
+	for i := range w.Ships {
+		w.Ships[i].Energy.Tick() // the slow trickle back; loot is what refills it properly
+	}
+}
+
+// stepDrops ages the loot on the ground and hands it to any living ship that
+// flies over it. First one there takes it.
+func (w *World) stepDrops() {
+	kept := w.Drops[:0]
+	for _, d := range w.Drops {
+		d.life--
+		if d.life <= 0 {
+			continue
+		}
+		taker := w.shipOver(d.X, d.Y)
+		if taker == nil {
+			kept = append(kept, d)
+			continue
+		}
+		w.collect(taker, d.Ref)
+	}
+	w.Drops = kept
+}
+
+// shipOver returns the living ship touching a point, or nil.
+func (w *World) shipOver(x, y float64) *Ship {
+	for i := range w.Ships {
+		s := &w.Ships[i]
+		if !s.Alive() {
+			continue
+		}
+		if math.Hypot(s.X-x, s.Y-y) <= ShipRadius+dropRadius {
+			return s
+		}
+	}
+	return nil
+}
+
+// collect applies a drop. Every pickup carries a charge, whatever else it does —
+// that is linefire's rule, and it is what makes crossing the arena for one worth
+// the trip once the heavy weapons have been drawing on the pool. A ref this
+// simulation has nothing to do with yet still pays out that charge rather than
+// vanishing: the mods and the secondary weapon arrive later.
+func (w *World) collect(s *Ship, ref string) {
+	s.Energy.Add(weapon.PickupEnergy)
+	if ref == refHeal {
+		s.HP = min(s.HP+healAmount, s.prof.HP)
+	}
 }
 
 // apply turns one order into movement and, if the gun is ready, a shot.
@@ -411,6 +487,7 @@ func (w *World) resolveHits() {
 				s.respawn = respawnDelay
 				w.Kills[b.Faction]++
 				w.deaths = append(w.deaths, Death{X: s.X, Y: s.Y, Faction: s.Faction})
+				w.dropLoot(s)
 			}
 			break
 		}
@@ -495,4 +572,21 @@ func clamp(v, lo, hi float64) float64 {
 		return hi
 	}
 	return v
+}
+
+// refHeal is the shared table's name for the plain heal pickup.
+const refHeal = "powerup"
+
+// dropRadius is how close a ship has to pass to sweep a drop up.
+const dropRadius = 14.0
+
+// dropLoot rolls the dead ship's kind against the shared table and leaves
+// whatever falls at the wreck. Same table as linefire, so a tank is worth
+// killing here for the same reason it is there.
+func (w *World) dropLoot(s *Ship) {
+	ref, ok := loot.Roll(s.Kind, w.rng.Float64())
+	if !ok {
+		return
+	}
+	w.Drops = append(w.Drops, Drop{Ref: ref, X: s.X, Y: s.Y, life: dropLife})
 }

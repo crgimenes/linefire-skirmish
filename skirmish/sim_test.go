@@ -3,8 +3,10 @@ package skirmish
 import (
 	"math"
 	"reflect"
+	"slices"
 	"testing"
 
+	"github.com/crgimenes/linefire/loot"
 	"github.com/crgimenes/linefire/ship"
 )
 
@@ -258,6 +260,81 @@ func TestIdleShipsPatrol(t *testing.T) {
 	}
 	if lone.wanderHead == held {
 		t.Error("patrol heading never changed across two hold periods")
+	}
+}
+
+// Combat has to feed the fleet: over a battle, wrecks leave loot on the ground,
+// and it is the shared table's loot, not something this simulation made up.
+func TestKillsDropSharedLoot(t *testing.T) {
+	w := New(testConfig(31))
+	seen := map[string]bool{}
+	for range 6000 {
+		w.Step()
+		for i := range w.Drops {
+			seen[w.Drops[i].Ref] = true
+		}
+	}
+	if len(seen) == 0 {
+		t.Fatal("a whole battle left no loot at all")
+	}
+	for ref := range seen {
+		if !slices.Contains(loot.Refs(), ref) {
+			t.Errorf("dropped %q, which is not in the shared table", ref)
+		}
+	}
+}
+
+// A drop is collected by flying over it, and whatever it was, it pays out a
+// charge — that is what makes crossing the arena for one worth the trip.
+func TestFlyingOverADropCollectsIt(t *testing.T) {
+	w := New(testConfig(32))
+	clearArena(w)
+	w.Ships[0] = w.newShip(0, FactionA, "enemy", 500, 500)
+	taker := &w.Ships[0]
+	taker.Energy.Level = 100
+	w.Drops = []Drop{{Ref: "firepower", X: taker.X, Y: taker.Y, life: dropLife}}
+
+	w.stepDrops()
+	if len(w.Drops) != 0 {
+		t.Fatal("the drop is still on the ground after a ship flew over it")
+	}
+	if taker.Energy.Level <= 100 {
+		t.Errorf("collecting left the pool at %d", taker.Energy.Level)
+	}
+}
+
+// The heal pickup is the one that mends the hull, and it must not push a ship
+// past what its profile allows.
+func TestHealPickupRepairsUpToTheProfile(t *testing.T) {
+	w := New(testConfig(33))
+	clearArena(w)
+	w.Ships[0] = w.newShip(0, FactionA, "tank", 400, 400)
+	hurt := &w.Ships[0]
+	full := hurt.prof.HP
+	hurt.HP = 1
+
+	w.collect(hurt, refHeal)
+	if hurt.HP != 1+healAmount {
+		t.Errorf("a heal took the hull from 1 to %d, want %d", hurt.HP, 1+healAmount)
+	}
+
+	hurt.HP = full
+	w.collect(hurt, refHeal)
+	if hurt.HP != full {
+		t.Errorf("a heal on a full hull pushed it to %d, profile allows %d", hurt.HP, full)
+	}
+}
+
+// Loot that nobody comes for has to expire, or a long battle carpets the arena.
+func TestUncollectedDropsExpire(t *testing.T) {
+	w := New(testConfig(34))
+	clearArena(w)
+	w.Drops = []Drop{{Ref: refHeal, X: 50, Y: 50, life: dropLife}}
+	for range dropLife {
+		w.stepDrops()
+	}
+	if len(w.Drops) != 0 {
+		t.Fatalf("%d drops survived their whole lifetime with nobody to collect them", len(w.Drops))
 	}
 }
 
