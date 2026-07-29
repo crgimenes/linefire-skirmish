@@ -1,56 +1,44 @@
-// Command linefire-skirmish runs an autonomous space battle over the desktop.
-// Hordes of ships from two factions fight on a transparent, click-through
-// overlay; there is nothing to play, only a small toolbar to pause, inspect or
-// close it. The ships fly themselves.
+// Command linefire-skirmish runs Linefire's attract demo over the desktop: an
+// indestructible autopilot ship fighting an endless horde in a procedurally
+// generated arena that regenerates every twenty seconds or so, drawn on a
+// transparent, undecorated, click-through window covering the monitor. There is
+// nothing to play — the mouse and keyboard pass straight through to whatever the
+// user is actually doing — it is Linefire playing itself, as entertainment.
 //
-// The battle is a deterministic simulation: the same -seed always produces the
-// same fight, so a run can be reproduced, replayed and scored. -ticks runs it
-// headless with no window at all, which is how a ship AI is tested.
+// The game is Linefire's, whole: this binary is only the window. All the code,
+// art and data come from the linefire module (the assets are embedded in it), so
+// what appears over the desktop is pixel for pixel the game.
 //
 // Usage:
 //
-//	linefire-skirmish                     battle over the desktop
-//	linefire-skirmish -debug              same, with the on-screen numbers
-//	linefire-skirmish -json               stream the battle state to stdout
-//	linefire-skirmish -ticks 3600 -json   run one minute headless and report
+//	linefire-skirmish            the battle, silent, over the desktop
+//	linefire-skirmish -sound     same, with the arcade attract-mode audio
+//	linefire-skirmish -debug     same, with the F3 debug HUD up
+//
+// Quit with Ctrl+C in the terminal that launched it (the window takes no input).
 package main
 
 import (
-	"embed"
-	"encoding/json"
 	"flag"
 	"fmt"
-	"io/fs"
 	"log"
-	"math/rand/v2"
 	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/crgimenes/linefire-skirmish/skirmish"
+	"github.com/crgimenes/linefire"
+	"github.com/crgimenes/linefire/game"
 	"github.com/hajimehoshi/ebiten/v2"
 )
-
-//go:embed gameassets
-var assets embed.FS
 
 // version is stamped at build time (-X main.version=...).
 var version = "dev"
 
-const (
-	// The headless arena is fixed on purpose: a -ticks run must not depend on
-	// the monitor of the machine that happens to run it.
-	headlessWidth  = 1920.0
-	headlessHeight = 1080.0
-
-	jsonInterval = 60 // ticks between -json snapshots: one per second at 60 TPS
-)
-
 func main() {
+	log.SetFlags(0)
 	showVersion := flag.Bool("version", false, "print the version and exit")
-	asJSON := flag.Bool("json", false, "write one JSON snapshot per second to stdout")
-	debug := flag.Bool("debug", false, "log to stderr and show the on-screen numbers")
-	ticks := flag.Int("ticks", 0, "run headless for N ticks and exit; no window is opened")
-	seed := flag.Uint64("seed", 0, "battle seed; 0 picks one at random")
-	perSide := flag.Int("ships", 8, "ships per faction")
+	sound := flag.Bool("sound", false, "play the attract-mode audio (silent by default)")
+	debug := flag.Bool("debug", false, "start with the debug HUD up")
 	flag.Parse()
 
 	if *showVersion {
@@ -58,102 +46,44 @@ func main() {
 		return
 	}
 
-	if *seed == 0 {
-		// Picking which battle to watch, not a secret: the seed is printed and
-		// echoed in every -json line precisely so the run can be repeated.
-		*seed = rand.Uint64() // #nosec G404
-	}
-	if *debug {
-		log.SetPrefix("linefire-skirmish: ")
-		log.Printf("seed %d, %d ships per faction", *seed, *perSide)
-	}
-
-	content, err := fs.Sub(assets, ".")
+	g, err := game.NewSkirmish(linefire.Content(), "gameassets", game.SkirmishOptions{
+		Sound: *sound,
+		Debug: *debug,
+	})
 	if err != nil {
 		log.Fatalf("linefire-skirmish: %v", err)
 	}
 
-	report := reporter(*asJSON)
+	// The window is click-through, so Ctrl+C in the launching terminal is the
+	// off switch.
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-interrupt
+		os.Exit(0)
+	}()
 
-	if *ticks > 0 {
-		runHeadless(*ticks, *seed, *perSide, report)
-		return
-	}
-	if err := runOverlay(content, *seed, *perSide, *debug, report); err != nil {
-		log.Fatalf("linefire-skirmish: %v", err)
-	}
-}
-
-// reporter returns the per-tick hook that emits -json snapshots, or a no-op when
-// -json is off. Sampling lives here so both the overlay and the headless run
-// report identically.
-func reporter(enabled bool) func(*skirmish.World) {
-	if !enabled {
-		return func(*skirmish.World) {}
-	}
-	enc := json.NewEncoder(os.Stdout)
-	return func(w *skirmish.World) {
-		if w.Tick%jsonInterval != 0 {
-			return
-		}
-		if err := enc.Encode(w.Snapshot()); err != nil {
-			log.Fatalf("linefire-skirmish: writing json: %v", err)
-		}
-	}
-}
-
-// runHeadless steps the battle without opening a window: the deterministic core
-// on its own, for testing ship AI and for scoring one faction against another.
-func runHeadless(ticks int, seed uint64, perSide int, report func(*skirmish.World)) {
-	w := skirmish.New(skirmish.Config{
-		Width:   headlessWidth,
-		Height:  headlessHeight,
-		PerSide: perSide,
-		Seed:    seed,
-	})
-	for range ticks {
-		w.Step()
-		report(w)
-	}
-}
-
-// runOverlay opens the transparent full-monitor window and runs the battle on it.
-func runOverlay(content fs.FS, seed uint64, perSide int, debug bool, report func(*skirmish.World)) error {
+	// A transparent, undecorated, always-on-top window covering the monitor,
+	// absent from the taskbar and never holding focus: the NeoFrame recipe. The
+	// desktop underneath stays fully usable — the overlay never takes the mouse.
 	const name = "Linefire Skirmish"
-
 	width, height := ebiten.Monitor().Size()
-	w := skirmish.New(skirmish.Config{
-		Width:   float64(width),
-		Height:  float64(height),
-		PerSide: perSide,
-		Seed:    seed,
-	})
-
-	o, err := newOverlay(content, w, width, height, debug, report)
-	if err != nil {
-		return err
-	}
-
-	// Click-through until the cursor reaches the toolbar (see setPassthrough),
-	// floating above everything, absent from the taskbar, and running while
-	// unfocused — it is a backdrop, not an app the user switches to.
-	o.setPassthrough(true)
-	ebiten.SetRunnableOnUnfocused(true)
 	ebiten.SetWindowDecorated(false)
 	ebiten.SetWindowFloating(true)
+	ebiten.SetWindowMousePassthrough(true)
 	ebiten.SetWindowPosition(0, 0)
 	ebiten.SetWindowSize(width, height)
 	ebiten.SetWindowTitle(name)
+	ebiten.SetRunnableOnUnfocused(true)
 
-	err = ebiten.RunGameWithOptions(o, &ebiten.RunGameOptions{
+	err = ebiten.RunGameWithOptions(g, &ebiten.RunGameOptions{
 		InitUnfocused:     true,
 		ScreenTransparent: true,
 		SkipTaskbar:       true,
 		X11ClassName:      name,
 		X11InstanceName:   name,
 	})
-	if _, quit := err.(errQuit); quit {
-		return nil
+	if err != nil {
+		log.Fatalf("linefire-skirmish: %v", err)
 	}
-	return err
 }
