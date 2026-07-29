@@ -63,6 +63,28 @@ func TestBattleSustainsItself(t *testing.T) {
 	}
 }
 
+// Ships have to enter at their own side's edge and spread along it: that travel
+// is what fills the screen, and two ships arriving on the same spot would undo it.
+func TestShipsSpawnApartAlongTheirEdge(t *testing.T) {
+	cfg := testConfig(11)
+	w := New(cfg)
+	slotHeight := cfg.Height / float64(cfg.PerSide)
+	for i := range w.Ships {
+		s := &w.Ships[i]
+		edge := s.X
+		if s.Faction == FactionB {
+			edge = cfg.Width - s.X
+		}
+		if edge > ShipRadius+spawnBand {
+			t.Errorf("ship %d spawned %.1f from its edge, past the %.1f band", s.ID, edge, spawnBand)
+		}
+		slot := float64(s.ID % cfg.PerSide)
+		if s.Y < slot*slotHeight || s.Y > (slot+1)*slotHeight {
+			t.Errorf("ship %d at y %.1f is outside its slot %v", s.ID, s.Y, slot)
+		}
+	}
+}
+
 func TestDestroyedShipRespawns(t *testing.T) {
 	w := New(testConfig(3))
 	s := &w.Ships[0]

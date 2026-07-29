@@ -39,6 +39,7 @@ const (
 	bulletLife   = 90
 	bulletRadius = 2.0
 	edgeMargin   = 100.0 // steer back once this close to the border
+	spawnBand    = 60.0  // depth of the strip along the edge where ships appear
 	respawnDelay = 120   // ticks a destroyed ship waits before rejoining
 )
 
@@ -108,23 +109,29 @@ func New(cfg Config) *World {
 	return w
 }
 
-// spawnShip places a fresh ship in its faction's home band: faction A on the
-// left third, faction B on the right third, so the first seconds are an
-// approach rather than an instant scrum.
+// spawnShip places a fresh ship hugging its faction's edge — A on the left, B on
+// the right — so every ship has to cross toward the middle to find a fight. That
+// keeps the action spread over the whole screen instead of collapsing into the
+// centre, and it is where the arrival portals will go.
+//
+// Along the edge each roster position gets its own slot, jittered inside it, so
+// ships enter far apart instead of stacking up. Keying the slot on the ship ID
+// means a respawn reuses the same slot, and both are deterministic.
 func (w *World) spawnShip(id int, f Faction) Ship {
-	x := w.rng.Float64() * w.Cfg.Width / 3
-	if f == FactionB {
-		x = w.Cfg.Width - x
-	}
+	x := ShipRadius + w.rng.Float64()*spawnBand
 	angle := 0.0
 	if f == FactionB {
+		x = w.Cfg.Width - x
 		angle = math.Pi
 	}
+	slot := id % w.Cfg.PerSide
+	slotHeight := w.Cfg.Height / float64(w.Cfg.PerSide)
+	y := (float64(slot) + w.rng.Float64()) * slotHeight
 	return Ship{
 		ID:      id,
 		Faction: f,
-		X:       x,
-		Y:       w.rng.Float64() * w.Cfg.Height,
+		X:       clamp(x, ShipRadius, w.Cfg.Width-ShipRadius),
+		Y:       clamp(y, ShipRadius, w.Cfg.Height-ShipRadius),
 		Angle:   angle,
 		HP:      shipHP,
 	}
