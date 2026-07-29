@@ -34,21 +34,23 @@ func (w *World) decide(i int) Order {
 	t := &w.Ships[target]
 	dx, dy := t.X-s.X, t.Y-s.Y
 	dist := math.Hypot(dx, dy)
-	face := math.Atan2(dy, dx)
+	bearing := math.Atan2(dy, dx) // where the target is; movement is built on this
+	face := aimAt(s, t)           // where to shoot; ahead of it
 
 	// Closing, holding or backing off, depending on the range band. Inside the
 	// band the ship strafes sideways, which keeps it a moving target and makes
 	// the swarm read as a dogfight instead of two lines meeting head-on.
-	move := face // closing in
+	move := bearing // closing in
 	switch {
 	case dist < standoff*0.7:
-		move = face + math.Pi // too close: back off, guns still on the target
+		move = bearing + math.Pi // too close: back off, guns still on the target
 	case dist < standoff*1.15:
-		move = face + math.Pi/2 // in the band: strafe, alternating side by ID
+		move = bearing + math.Pi/2 // in the band: strafe, alternating side by ID
 		if s.ID%2 == 0 {
-			move = face - math.Pi/2
+			move = bearing - math.Pi/2
 		}
 	}
+	move = w.separate(s, move)
 	move = w.avoidEdges(s, move)
 
 	aimed := math.Abs(wrapAngle(face-s.Angle)) < fireCone
@@ -58,6 +60,80 @@ func (w *World) decide(i int) Order {
 		Thrust: 1,
 		Fire:   aimed && dist < engageRange,
 	}
+}
+
+// aimAt returns the heading that puts a shot where the target is going, rather
+// than where it is now. Without this two groups orbit each other for a long time
+// and only connect by accident, because every shot is aimed at a position the
+// target has already left.
+//
+// The intercept is solved in the shooter's frame — a shot inherits the ship's
+// velocity, so only relative motion matters — and only leadAccuracy of it is
+// applied. A target that cannot be caught (faster than the shot, or closing time
+// that does not solve) falls back to firing straight at it.
+func aimAt(s, t *Ship) float64 {
+	rx, ry := t.X-s.X, t.Y-s.Y
+	vx, vy := t.VX-s.VX, t.VY-s.VY
+
+	// |r + v*time| = bulletSpeed*time, as a quadratic in time.
+	a := vx*vx + vy*vy - bulletSpeed*bulletSpeed
+	b := 2 * (rx*vx + ry*vy)
+	c := rx*rx + ry*ry
+	time, ok := smallestPositiveRoot(a, b, c)
+	if !ok {
+		return math.Atan2(ry, rx)
+	}
+	return math.Atan2(ry+vy*time*leadAccuracy, rx+vx*time*leadAccuracy)
+}
+
+// smallestPositiveRoot solves a*x^2 + b*x + c for its smallest positive root,
+// degrading to the linear case when a is zero (target and shot equally fast).
+func smallestPositiveRoot(a, b, c float64) (float64, bool) {
+	if math.Abs(a) < 1e-9 {
+		if math.Abs(b) < 1e-9 {
+			return 0, false
+		}
+		x := -c / b
+		return x, x > 0
+	}
+	disc := b*b - 4*a*c
+	if disc < 0 {
+		return 0, false
+	}
+	root := math.Sqrt(disc)
+	x1, x2 := (-b-root)/(2*a), (-b+root)/(2*a)
+	if x1 > x2 {
+		x1, x2 = x2, x1
+	}
+	if x1 > 0 {
+		return x1, true
+	}
+	return x2, x2 > 0
+}
+
+// separate blends a push away from nearby ships into the tactical heading, so
+// two ships working the same target stop occupying the same spot. Enemies count
+// as well as allies: overlapping anything reads as a rendering fault.
+func (w *World) separate(s *Ship, move float64) float64 {
+	ax, ay := math.Cos(move), math.Sin(move)
+	for i := range w.Ships {
+		o := &w.Ships[i]
+		if o.ID == s.ID || !o.Alive() {
+			continue
+		}
+		dx, dy := s.X-o.X, s.Y-o.Y
+		d := math.Hypot(dx, dy)
+		if d >= separationRange || d == 0 {
+			continue
+		}
+		push := (separationRange - d) / separationRange // full at contact, nothing at the rim
+		ax += dx / d * push * separationGain
+		ay += dy / d * push * separationGain
+	}
+	if ax == 0 && ay == 0 {
+		return move
+	}
+	return math.Atan2(ay, ax)
 }
 
 // nearestEnemy returns the index of the closest living ship of another faction,

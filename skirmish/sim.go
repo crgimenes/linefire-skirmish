@@ -41,6 +41,18 @@ const (
 	edgeMargin   = 100.0 // steer back once this close to the border
 	respawnDelay = 120   // ticks a destroyed ship waits before rejoining
 
+	// Separation, borrowed from flocking: a short-range push away from whatever is
+	// nearby, so ships circling the same target stop flying through each other.
+	// Only separation — cohesion and alignment would make the battle a flock.
+	separationRange = 4 * ShipRadius // start pushing apart inside this
+	separationGain  = 1.5            // strength of the push against the tactical heading
+
+	// How much of the computed intercept a ship actually aims at. Deliberately
+	// short of 1: a gunner that never misses turns the dogfight into an execution,
+	// while no lead at all leaves both sides orbiting until someone is hit by
+	// accident. The gap is the fight.
+	leadAccuracy = 0.6
+
 	// A portal is not precise: it drops a ship somewhere out in the arena rather
 	// than on a marked spot. spawnCenterHole is the share of the way out from the
 	// centre that stays clear, so arrivals never land in the middle of the screen;

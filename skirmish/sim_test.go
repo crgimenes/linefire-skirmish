@@ -163,6 +163,60 @@ func TestResizeKeepsShipsInside(t *testing.T) {
 	}
 }
 
+// Leading is the difference between a dogfight and two groups orbiting each
+// other: a crossing target has to be aimed ahead of, a still one straight at.
+func TestAimLeadsAMovingTarget(t *testing.T) {
+	shooter := Ship{X: 0, Y: 0}
+	still := Ship{X: 100, Y: 0}
+	if got := aimAt(&shooter, &still); math.Abs(got) > 1e-9 {
+		t.Errorf("aim at a still target = %v, want straight ahead", got)
+	}
+
+	crossing := Ship{X: 100, Y: 0, VY: 2}
+	lead := aimAt(&shooter, &crossing)
+	if lead <= 0 {
+		t.Errorf("aim at a target crossing to +Y = %v, want ahead of it", lead)
+	}
+	// The shot inherits the shooter's velocity, so matching the target's drift
+	// leaves nothing to lead: only relative motion counts.
+	matched := shooter
+	matched.VY = crossing.VY
+	if got := aimAt(&matched, &crossing); math.Abs(got) > 1e-9 {
+		t.Errorf("aim while drifting with the target = %v, want straight ahead", got)
+	}
+
+	// An uncatchable target (outrunning the shot, opening away) still gets a
+	// heading rather than a solver failure.
+	fleeing := Ship{X: 100, Y: 0, VX: bulletSpeed * 2}
+	if got := aimAt(&shooter, &fleeing); math.IsNaN(got) {
+		t.Error("aim at an uncatchable target returned NaN")
+	}
+}
+
+// Ships crowding the same spot have to be pushed apart, whatever side they fly
+// for — overlapping hulls read as a rendering fault, not as tactics.
+func TestSeparationPushesCrowdedShipsApart(t *testing.T) {
+	w := New(testConfig(2))
+	w.Ships[0] = Ship{ID: 0, Faction: FactionA, X: 500, Y: 500, HP: shipHP}
+	w.Ships[1] = Ship{ID: 1, Faction: FactionB, X: 500 + ShipRadius, Y: 500, HP: shipHP}
+	for i := 2; i < len(w.Ships); i++ {
+		w.Ships[i].HP = 0 // clear the arena: only the crowded pair matters here
+	}
+
+	west := math.Pi // straight at the neighbour, who sits to the east
+	got := w.separate(&w.Ships[0], west-math.Pi)
+	if math.Abs(wrapAngle(got-west)) > math.Pi/2 {
+		t.Errorf("heading into a neighbour bent to %v, still not away from it", got)
+	}
+
+	alone := w.Ships[0]
+	alone.X, alone.Y = 100, 100
+	w.Ships[1].HP = 0
+	if got := w.separate(&alone, 1.0); got != 1.0 {
+		t.Errorf("separation moved a ship with nobody near it: %v, want 1", got)
+	}
+}
+
 func TestTurnTowardTakesTheShortWay(t *testing.T) {
 	tests := []struct {
 		from, to, want float64
