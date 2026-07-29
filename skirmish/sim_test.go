@@ -63,25 +63,73 @@ func TestBattleSustainsItself(t *testing.T) {
 	}
 }
 
-// Ships have to enter at their own side's edge and spread along it: that travel
-// is what fills the screen, and two ships arriving on the same spot would undo it.
-func TestShipsSpawnApartAlongTheirEdge(t *testing.T) {
+// A portal drops its ship somewhere out in the arena: never in the middle of the
+// screen, and away from whatever is already flying. Both hold for the opening
+// roster and for every respawn afterwards, so the check runs over a whole battle.
+func TestPortalsDropShipsApartAndOffCentre(t *testing.T) {
 	cfg := testConfig(11)
 	w := New(cfg)
-	slotHeight := cfg.Height / float64(cfg.PerSide)
+	cx, cy := cfg.Width/2, cfg.Height/2
+	holeX, holeY := spawnCenterHole*(cx-ShipRadius), spawnCenterHole*(cy-ShipRadius)
+
+	checkArrival := func(s *Ship) {
+		t.Helper()
+		dx, dy := math.Abs(s.X-cx)/holeX, math.Abs(s.Y-cy)/holeY
+		if math.Hypot(dx, dy) < 1 {
+			t.Errorf("tick %d: ship %d arrived at %.1f,%.1f, inside the clear centre", w.Tick, s.ID, s.X, s.Y)
+		}
+		for i := range w.Ships {
+			o := &w.Ships[i]
+			if o.ID == s.ID || !o.Alive() {
+				continue
+			}
+			if d := math.Hypot(o.X-s.X, o.Y-s.Y); d < 2*ShipRadius {
+				t.Errorf("tick %d: ship %d arrived %.1f from ship %d", w.Tick, s.ID, d, o.ID)
+			}
+		}
+	}
+
 	for i := range w.Ships {
-		s := &w.Ships[i]
-		edge := s.X
-		if s.Faction == FactionB {
-			edge = cfg.Width - s.X
+		checkArrival(&w.Ships[i])
+	}
+
+	// Watch respawns: a ship that was dead last tick and is alive now just arrived.
+	wasDead := make([]bool, len(w.Ships))
+	for range 3000 {
+		w.Step()
+		for i := range w.Ships {
+			s := &w.Ships[i]
+			if wasDead[i] && s.Alive() {
+				checkArrival(s)
+			}
+			wasDead[i] = !s.Alive()
 		}
-		if edge > ShipRadius+spawnBand {
-			t.Errorf("ship %d spawned %.1f from its edge, past the %.1f band", s.ID, edge, spawnBand)
+	}
+}
+
+// The whole point of the scatter is that arrivals are not bunched: measure it
+// against what plain uniform placement would give.
+func TestArrivalsBeatUniformScatter(t *testing.T) {
+	cfg := testConfig(5)
+	spread := func(w *World) float64 {
+		worst := math.Inf(1)
+		for i := range w.Ships {
+			for j := i + 1; j < len(w.Ships); j++ {
+				d := math.Hypot(w.Ships[i].X-w.Ships[j].X, w.Ships[i].Y-w.Ships[j].Y)
+				worst = min(worst, d)
+			}
 		}
-		slot := float64(s.ID % cfg.PerSide)
-		if s.Y < slot*slotHeight || s.Y > (slot+1)*slotHeight {
-			t.Errorf("ship %d at y %.1f is outside its slot %v", s.ID, s.Y, slot)
-		}
+		return worst
+	}
+
+	w := New(cfg)
+	uniform := New(cfg)
+	for i := range uniform.Ships {
+		uniform.Ships[i].X = uniform.rng.Float64() * cfg.Width
+		uniform.Ships[i].Y = uniform.rng.Float64() * cfg.Height
+	}
+	if spread(w) <= spread(uniform) {
+		t.Errorf("closest pair %.1f apart, no better than uniform placement at %.1f", spread(w), spread(uniform))
 	}
 }
 

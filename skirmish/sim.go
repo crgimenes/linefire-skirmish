@@ -39,8 +39,16 @@ const (
 	bulletLife   = 90
 	bulletRadius = 2.0
 	edgeMargin   = 100.0 // steer back once this close to the border
-	spawnBand    = 60.0  // depth of the strip along the edge where ships appear
 	respawnDelay = 120   // ticks a destroyed ship waits before rejoining
+
+	// A portal is not precise: it drops a ship somewhere out in the arena rather
+	// than on a marked spot. spawnCenterHole is the share of the way out from the
+	// centre that stays clear, so arrivals never land in the middle of the screen;
+	// spawnCandidates is how many points are drawn before keeping the one furthest
+	// from every living ship, which is what spreads arrivals apart without a
+	// retry loop that could fail to place anything.
+	spawnCenterHole = 0.35
+	spawnCandidates = 12
 )
 
 // Ship is one autonomous fighter. A destroyed ship keeps its slot with HP 0 and
@@ -88,7 +96,8 @@ type World struct {
 	orders []Order // reused per tick so stepping allocates nothing
 }
 
-// New builds a world with both rosters spawned on opposite sides of the arena.
+// New builds a world with both rosters already through their portals, scattered
+// over the arena.
 func New(cfg Config) *World {
 	if cfg.PerSide < 1 {
 		cfg.PerSide = 1
@@ -109,32 +118,66 @@ func New(cfg Config) *World {
 	return w
 }
 
-// spawnShip places a fresh ship hugging its faction's edge — A on the left, B on
-// the right — so every ship has to cross toward the middle to find a fight. That
-// keeps the action spread over the whole screen instead of collapsing into the
-// centre, and it is where the arrival portals will go.
-//
-// Along the edge each roster position gets its own slot, jittered inside it, so
-// ships enter far apart instead of stacking up. Keying the slot on the ship ID
-// means a respawn reuses the same slot, and both are deterministic.
+// spawnShip drops a fresh ship through a portal: no home side, no marked spot,
+// just somewhere out in the arena, away from the centre of the screen and as far
+// as the draw manages from every ship already flying. Facing is random too — a
+// portal does not aim what it throws.
 func (w *World) spawnShip(id int, f Faction) Ship {
-	x := ShipRadius + w.rng.Float64()*spawnBand
-	angle := 0.0
-	if f == FactionB {
-		x = w.Cfg.Width - x
-		angle = math.Pi
-	}
-	slot := id % w.Cfg.PerSide
-	slotHeight := w.Cfg.Height / float64(w.Cfg.PerSide)
-	y := (float64(slot) + w.rng.Float64()) * slotHeight
+	x, y := w.spawnPoint()
 	return Ship{
 		ID:      id,
 		Faction: f,
-		X:       clamp(x, ShipRadius, w.Cfg.Width-ShipRadius),
-		Y:       clamp(y, ShipRadius, w.Cfg.Height-ShipRadius),
-		Angle:   angle,
+		X:       x,
+		Y:       y,
+		Angle:   wrapAngle(w.rng.Float64() * 2 * math.Pi),
 		HP:      shipHP,
 	}
+}
+
+// spawnPoint draws spawnCandidates arrival points and keeps the one furthest from
+// any living ship. Best-candidate sampling rather than reject-and-retry: it always
+// returns a point, costs a fixed number of draws, and stays deterministic.
+func (w *World) spawnPoint() (float64, float64) {
+	bestX, bestY, bestDist := 0.0, 0.0, -1.0
+	for range spawnCandidates {
+		x, y := w.arrivalPoint()
+		d := w.distToNearestShip(x, y)
+		if d <= bestDist {
+			continue
+		}
+		bestX, bestY, bestDist = x, y, d
+	}
+	return bestX, bestY
+}
+
+// arrivalPoint picks one point in the arena outside the central keep-out, drawn
+// in polar form around the centre so every direction is equally likely and the
+// clear middle costs no rejections.
+func (w *World) arrivalPoint() (float64, float64) {
+	angle := w.rng.Float64() * 2 * math.Pi
+	reach := spawnCenterHole + w.rng.Float64()*(1-spawnCenterHole)
+	cx, cy := w.Cfg.Width/2, w.Cfg.Height/2
+	x := cx + math.Cos(angle)*reach*(cx-ShipRadius)
+	y := cy + math.Sin(angle)*reach*(cy-ShipRadius)
+	return clamp(x, ShipRadius, w.Cfg.Width-ShipRadius), clamp(y, ShipRadius, w.Cfg.Height-ShipRadius)
+}
+
+// distToNearestShip measures how clear a candidate point is. Only living ships
+// count: a wreck waiting to respawn is not on screen to crowd anything.
+func (w *World) distToNearestShip(x, y float64) float64 {
+	best := math.Inf(1)
+	for i := range w.Ships {
+		s := &w.Ships[i]
+		if !s.Alive() {
+			continue
+		}
+		d := math.Hypot(s.X-x, s.Y-y)
+		if d >= best {
+			continue
+		}
+		best = d
+	}
+	return best
 }
 
 // Step advances the simulation by one tick.
