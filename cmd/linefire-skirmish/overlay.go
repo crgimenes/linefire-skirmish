@@ -69,6 +69,10 @@ const (
 	// enough to arrive and still looked slack; the package default would not even
 	// have finished one.
 	portalMoteSpeed = 6.0
+
+	// portalMoteSize is two thirds of linefire's: finer motes on a rim this wide,
+	// so the convergence reads as a stream of sparks rather than a ring of dots.
+	portalMoteSize = effects.DefaultMoteSize * 2 / 3
 )
 
 // portal is one vortex the overlay is drawing. It is presentation only: the sim
@@ -282,6 +286,7 @@ func (o *overlay) drawPortals(dst *ebiten.Image) {
 			Col:      factionPalette[p.faction].stroke,
 			Seconds:  seconds,
 			Speed:    portalMoteSpeed,
+			MoteSize: portalMoteSize,
 			HideRing: true,        // a ship materialises; nothing here is a hole to fly into
 			Fade:     1 - age*age, // holds open, then goes quickly
 			DPR:      1,
