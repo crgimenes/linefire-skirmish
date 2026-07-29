@@ -4,6 +4,8 @@ import (
 	"math"
 	"reflect"
 	"testing"
+
+	"github.com/crgimenes/linefire/ship"
 )
 
 func testConfig(seed uint64) Config {
@@ -119,6 +121,52 @@ func TestBestCandidateBeatsASingleDraw(t *testing.T) {
 	}
 }
 
+// Both sides field the same mix of hulls, and the profiles have to actually
+// reach the ship: a roster where every hull flies alike is the thing this is
+// meant to replace.
+func TestBothSidesFieldEveryType(t *testing.T) {
+	w := New(testConfig(13))
+	kinds := ship.Kinds()
+
+	for f := range FactionCount {
+		for _, kind := range kinds {
+			found := false
+			for i := range w.Ships {
+				if w.Ships[i].Faction == f && w.Ships[i].Kind == kind {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("faction %d fields no %s", f, kind)
+			}
+		}
+	}
+
+	for range PortalLead + openingStagger + 2 {
+		w.Step() // profiles are resolved when a ship comes through its portal
+	}
+	byKind := map[string]*Ship{}
+	for i := range w.Ships {
+		if w.Ships[i].Alive() {
+			byKind[w.Ships[i].Kind] = &w.Ships[i]
+		}
+	}
+	tank, rusher := byKind["tank"], byKind["rusher"]
+	if tank == nil || rusher == nil {
+		t.Fatal("the tank and the rusher should both be flying by now")
+	}
+	if tank.HP <= rusher.HP {
+		t.Errorf("tank has %d hull points, rusher %d: the profiles are not reaching the ship", tank.HP, rusher.HP)
+	}
+	if tank.MaxSpeed() >= rusher.MaxSpeed() {
+		t.Errorf("tank tops out at %.1f, rusher at %.1f: the tank should be the slow one", tank.MaxSpeed(), rusher.MaxSpeed())
+	}
+	if turret := byKind["turret"]; turret != nil && turret.MaxSpeed() != 0 {
+		t.Errorf("the turret should be stationary, it tops out at %.1f", turret.MaxSpeed())
+	}
+}
+
 // Deaths is what the overlay hangs an explosion on, so it has to report the spot
 // the ship was actually destroyed at, and only for the tick it happened.
 func TestDeathsReportWhereAShipDied(t *testing.T) {
@@ -143,7 +191,9 @@ func TestDeathsReportWhereAShipDied(t *testing.T) {
 	if deaths[0].Faction != FactionA {
 		t.Errorf("death reported for faction %v, want %v", deaths[0].Faction, FactionA)
 	}
-	if math.Hypot(deaths[0].X-x, deaths[0].Y-y) > maxSpeed {
+	// The ship moved once between the position captured above and the hit, so a
+	// tick of travel is the whole allowance.
+	if math.Hypot(deaths[0].X-x, deaths[0].Y-y) > victim.MaxSpeed()+1e-6 {
 		t.Errorf("death at %.1f,%.1f, nowhere near the ship at %.1f,%.1f", deaths[0].X, deaths[0].Y, x, y)
 	}
 
@@ -186,7 +236,8 @@ func TestResizeKeepsShipsInside(t *testing.T) {
 // Leading is the difference between a dogfight and two groups orbiting each
 // other: a crossing target has to be aimed ahead of, a still one straight at.
 func TestAimLeadsAMovingTarget(t *testing.T) {
-	shooter := Ship{X: 0, Y: 0}
+	grunt := ship.For("enemy")
+	shooter := Ship{X: 0, Y: 0, prof: grunt}
 	still := Ship{X: 100, Y: 0}
 	if got := aimAt(&shooter, &still); math.Abs(got) > 1e-9 {
 		t.Errorf("aim at a still target = %v, want straight ahead", got)
@@ -207,7 +258,7 @@ func TestAimLeadsAMovingTarget(t *testing.T) {
 
 	// An uncatchable target (outrunning the shot, opening away) still gets a
 	// heading rather than a solver failure.
-	fleeing := Ship{X: 100, Y: 0, VX: bulletSpeed * 2}
+	fleeing := Ship{X: 100, Y: 0, VX: shooter.ShotSpeed() * 2}
 	if got := aimAt(&shooter, &fleeing); math.IsNaN(got) {
 		t.Error("aim at an uncatchable target returned NaN")
 	}
@@ -217,8 +268,8 @@ func TestAimLeadsAMovingTarget(t *testing.T) {
 // for — overlapping hulls read as a rendering fault, not as tactics.
 func TestSeparationPushesCrowdedShipsApart(t *testing.T) {
 	w := New(testConfig(2))
-	w.Ships[0] = Ship{ID: 0, Faction: FactionA, X: 500, Y: 500, HP: shipHP}
-	w.Ships[1] = Ship{ID: 1, Faction: FactionB, X: 500 + ShipRadius, Y: 500, HP: shipHP}
+	w.Ships[0] = w.newShip(0, FactionA, "enemy", 500, 500)
+	w.Ships[1] = w.newShip(1, FactionB, "enemy", 500+ShipRadius, 500)
 	for i := 2; i < len(w.Ships); i++ {
 		w.Ships[i].HP = 0 // clear the arena: only the crowded pair matters here
 	}

@@ -11,6 +11,8 @@ package skirmish
 import (
 	"math"
 	"math/rand/v2"
+
+	"github.com/crgimenes/linefire/ship"
 )
 
 // Faction is a side in the battle.
@@ -25,17 +27,20 @@ const (
 // Tuning. These are the whole balance of the fight; keeping them together makes
 // the feel of the battle one screen of numbers instead of a hunt through code.
 const (
-	ShipRadius   = 15.0 // hit radius in arena pixels
-	shipHP       = 3
-	maxSpeed     = 3.2   // pixels per tick
-	accel        = 0.15  // thrust acceleration
+	ShipRadius = 15.0 // hit radius in arena pixels
+	accel      = 0.15 // thrust acceleration
+
+	// Linefire's profiles are written for a tight cave; this arena is a whole
+	// screen. These scale the shared numbers into it rather than reinterpreting
+	// them, so a sniper stays the long-range glass cannon it is over there.
+	speedScale    = 1.8 // world units per frame -> arena pixels per tick
+	rangeScale    = 1.6 // world units -> arena pixels
+	fireRateScale = 0.4 // frames between shots: the horde fights faster than a stage does
+
 	drag         = 0.985 // velocity kept per tick; ships coast but do not drift forever
 	turnRate     = 0.08  // radians per tick
-	standoff     = 180.0 // preferred range: ships circle their target instead of ramming
-	engageRange  = 460.0 // acquire and shoot inside this
 	fireCone     = 0.26  // radians of aim error tolerated before shooting
-	fireInterval = 26    // ticks between shots
-	bulletSpeed  = 7.0
+	shotDamage   = 1     // hull points per hit; profiles differ by HP, not by damage
 	bulletLife   = 90
 	bulletRadius = 2.0
 	edgeMargin   = 100.0 // steer back once this close to the border
@@ -75,6 +80,7 @@ const (
 type Ship struct {
 	ID      int
 	Faction Faction
+	Kind    string // the shared profile it flies: grunt, rusher, sniper, tank, turret
 	X, Y    float64
 	VX, VY  float64
 	Angle   float64 // facing, radians, 0 = +X
@@ -88,7 +94,19 @@ type Ship struct {
 
 	cool    int // ticks until the gun is ready
 	respawn int // ticks until revival; only meaningful while HP is 0
+
+	// prof is resolved once at spawn rather than looked up per tick, and keeps
+	// the stepping free of map access.
+	prof ship.Profile
 }
+
+// MaxSpeed, EngageRange, Standoff, FireEvery and ShotSpeed are the ship's
+// profile in arena units.
+func (s *Ship) MaxSpeed() float64    { return s.prof.SpeedMul * speedScale }
+func (s *Ship) EngageRange() float64 { return s.prof.Radar * rangeScale }
+func (s *Ship) Standoff() float64    { return s.prof.Standoff * rangeScale }
+func (s *Ship) ShotSpeed() float64   { return s.prof.ShotSpeed * speedScale }
+func (s *Ship) FireEvery() int       { return max(int(float64(s.prof.FireEvery)*fireRateScale), 1) }
 
 // Alive reports whether the ship is in the fight this tick.
 func (s *Ship) Alive() bool { return s.HP > 0 }
@@ -156,12 +174,14 @@ func New(cfg Config) *World {
 		Ships:  make([]Ship, 0, cfg.PerSide*int(FactionCount)),
 		orders: make([]Order, 0, cfg.PerSide*int(FactionCount)),
 	}
+	kinds := ship.Kinds()
 	for f := range FactionCount {
-		for range cfg.PerSide {
+		for i := range cfg.PerSide {
 			id := len(w.Ships)
 			w.Ships = append(w.Ships, Ship{
 				ID:      id,
 				Faction: f,
+				Kind:    kinds[i%len(kinds)], // both sides field the same mix
 				respawn: PortalLead + 1 + w.rng.IntN(openingStagger),
 			})
 		}
@@ -169,16 +189,19 @@ func New(cfg Config) *World {
 	return w
 }
 
-// newShip is a ship coming out of a portal at (x, y). Facing is random: a portal
-// does not aim what it throws.
-func (w *World) newShip(id int, f Faction, x, y float64) Ship {
+// newShip is a ship coming out of a portal at (x, y), flying the profile its
+// slot was dealt. Facing is random: a portal does not aim what it throws.
+func (w *World) newShip(id int, f Faction, kind string, x, y float64) Ship {
+	prof := ship.For(kind)
 	return Ship{
 		ID:      id,
 		Faction: f,
+		Kind:    kind,
 		X:       x,
 		Y:       y,
 		Angle:   wrapAngle(w.rng.Float64() * 2 * math.Pi),
-		HP:      shipHP,
+		HP:      prof.HP,
+		prof:    prof,
 	}
 }
 
@@ -271,7 +294,7 @@ func (w *World) apply(i int, o Order) {
 	s.Angle = turnToward(s.Angle, o.Face, turnRate)
 
 	s.Thrust, s.Burn = 0, o.Move
-	if o.Thrust > 0 {
+	if o.Thrust > 0 && !s.prof.Stationary {
 		s.Thrust = min(o.Thrust, 1)
 		s.VX += math.Cos(o.Move) * accel * s.Thrust
 		s.VY += math.Sin(o.Move) * accel * s.Thrust
@@ -279,9 +302,9 @@ func (w *World) apply(i int, o Order) {
 	s.VX *= drag
 	s.VY *= drag
 	speed := math.Hypot(s.VX, s.VY)
-	if speed > maxSpeed {
-		s.VX *= maxSpeed / speed
-		s.VY *= maxSpeed / speed
+	if top := s.MaxSpeed(); speed > top {
+		s.VX *= top / speed
+		s.VY *= top / speed
 	}
 	s.X += s.VX
 	s.Y += s.VY
@@ -303,13 +326,14 @@ func (w *World) apply(i int, o Order) {
 	if !o.Fire || s.cool > 0 {
 		return
 	}
-	s.cool = fireInterval
+	s.cool = s.FireEvery()
+	shot := s.ShotSpeed()
 	w.Bullets = append(w.Bullets, Bullet{
 		Faction: s.Faction,
 		X:       s.X + math.Cos(s.Angle)*ShipRadius,
 		Y:       s.Y + math.Sin(s.Angle)*ShipRadius,
-		VX:      s.VX + math.Cos(s.Angle)*bulletSpeed,
-		VY:      s.VY + math.Sin(s.Angle)*bulletSpeed,
+		VX:      s.VX + math.Cos(s.Angle)*shot,
+		VY:      s.VY + math.Sin(s.Angle)*shot,
 		life:    bulletLife,
 	})
 }
@@ -347,7 +371,7 @@ func (w *World) resolveHits() {
 			if math.Hypot(s.X-b.X, s.Y-b.Y) > ShipRadius+bulletRadius {
 				continue
 			}
-			s.HP--
+			s.HP -= shotDamage
 			hit = true
 			if s.HP <= 0 {
 				s.HP = 0
@@ -381,7 +405,7 @@ func (w *World) reviveDead() {
 			s.X, s.Y = w.spawnPoint()
 			w.arrivals = append(w.arrivals, Arrival{X: s.X, Y: s.Y, Faction: s.Faction})
 		case s.respawn <= 0:
-			*s = w.newShip(s.ID, s.Faction, s.X, s.Y)
+			*s = w.newShip(s.ID, s.Faction, s.Kind, s.X, s.Y)
 		}
 	}
 }

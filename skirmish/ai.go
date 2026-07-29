@@ -36,6 +36,7 @@ func (w *World) decide(i int) Order {
 	dist := math.Hypot(dx, dy)
 	bearing := math.Atan2(dy, dx) // where the target is; movement is built on this
 	face := aimAt(s, t)           // where to shoot; ahead of it
+	standoff := s.Standoff()      // the range this hull likes to hold
 
 	// Closing, holding or backing off, depending on the range band. Inside the
 	// band the ship strafes sideways, which keeps it a moving target and makes
@@ -58,7 +59,7 @@ func (w *World) decide(i int) Order {
 		Face:   face,
 		Move:   move,
 		Thrust: 1,
-		Fire:   aimed && dist < engageRange,
+		Fire:   aimed && dist < s.EngageRange(),
 	}
 }
 
@@ -75,8 +76,9 @@ func aimAt(s, t *Ship) float64 {
 	rx, ry := t.X-s.X, t.Y-s.Y
 	vx, vy := t.VX-s.VX, t.VY-s.VY
 
-	// |r + v*time| = bulletSpeed*time, as a quadratic in time.
-	a := vx*vx + vy*vy - bulletSpeed*bulletSpeed
+	// |r + v*time| = shot speed * time, as a quadratic in time.
+	shot := s.ShotSpeed()
+	a := vx*vx + vy*vy - shot*shot
 	b := 2 * (rx*vx + ry*vy)
 	c := rx*rx + ry*ry
 	time, ok := smallestPositiveRoot(a, b, c)

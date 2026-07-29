@@ -4,6 +4,7 @@ package skirmish
 type ShipState struct {
 	ID      int     `json:"id"`
 	Faction int     `json:"faction"`
+	Kind    string  `json:"kind"`
 	X       float64 `json:"x"`
 	Y       float64 `json:"y"`
 	Angle   float64 `json:"angle"`
@@ -46,6 +47,7 @@ func (w *World) Snapshot() Snapshot {
 		s.Ships = append(s.Ships, ShipState{
 			ID:      sh.ID,
 			Faction: int(sh.Faction),
+			Kind:    sh.Kind,
 			X:       sh.X,
 			Y:       sh.Y,
 			Angle:   sh.Angle,

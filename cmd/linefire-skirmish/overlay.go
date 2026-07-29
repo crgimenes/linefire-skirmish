@@ -9,9 +9,11 @@ import (
 	"math/rand/v2"
 
 	"github.com/crgimenes/linefire-skirmish/skirmish"
+	"github.com/crgimenes/linefire/asset"
 	"github.com/crgimenes/linefire/effects"
 	"github.com/crgimenes/linefire/filoio"
 	"github.com/crgimenes/linefire/render"
+	"github.com/crgimenes/linefire/ship"
 	"github.com/crgimenes/minigui"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -23,13 +25,21 @@ import (
 // is hit the same size.
 const shipScale = skirmish.ShipRadius / 22.0
 
-// hullNames picks which Linefire hull flies for each faction. The art already
-// carries the faction's colour (the player hull is cyan, the enemy hull red), so
-// no tinting is needed.
-var hullNames = [skirmish.FactionCount]string{"player", "enemy"}
+// factionAnchor is the colour each side is pulled toward. Every hull keeps the
+// hue that says which TYPE it is — the rusher is magenta, the sniper yellow —
+// blended far enough toward its side's anchor that friend and foe still read
+// apart across a busy screen.
+var factionAnchor = [skirmish.FactionCount]color.RGBA{
+	{0x80, 0xff, 0xff, 0xff}, // the player hull's cyan
+	{0xff, 0x5a, 0x4a, 0xff}, // the enemy hull's red
+}
 
-// hull is one faction's ship art, meshed once at startup: the solid geometry and
-// the emissive copy that feeds the bloom.
+// factionMix is how far a hull's own colour is pulled toward its side's anchor.
+// High enough that a glance reads the side, low enough that the type survives.
+const factionMix = 0.6
+
+// hull is one type's art for one faction, meshed once at startup: the solid
+// geometry and the emissive copy that feeds the bloom.
 type hull struct {
 	body *render.Mesh
 	glow *render.Mesh
@@ -62,7 +72,7 @@ type portal struct {
 // battle itself — that lives in the skirmish package.
 type overlay struct {
 	world   *skirmish.World
-	hulls   [skirmish.FactionCount]hull
+	hulls   [skirmish.FactionCount]map[string]hull
 	fx      *effects.Pool
 	portals []portal
 	glow    *render.Glow
@@ -100,14 +110,20 @@ func newOverlay(content fs.FS, w *skirmish.World, width, height int, debug bool,
 		report: report,
 		win:    minigui.Window{Title: "Skirmish", X: 8, Y: 8, Open: true, NoClose: true},
 	}
-	for f := range hullNames {
-		a, err := filoio.LoadAssetFS(content, "gameassets", hullNames[f])
+	for f := range o.hulls {
+		o.hulls[f] = map[string]hull{}
+	}
+	for _, kind := range ship.Kinds() {
+		a, err := filoio.LoadAssetFS(content, "gameassets", hullAsset(kind))
 		if err != nil {
-			return nil, fmt.Errorf("loading hull %q: %w", hullNames[f], err)
+			return nil, fmt.Errorf("loading hull %q: %w", kind, err)
 		}
-		o.hulls[f] = hull{
-			body: render.BuildLayersMesh(a.Layers),
-			glow: render.BuildGlowMesh(a.Layers),
+		for f := range o.hulls {
+			layers := tintLayers(a.Layers, factionAnchor[f])
+			o.hulls[f][kind] = hull{
+				body: render.BuildLayersMesh(layers),
+				glow: render.BuildGlowMesh(layers),
+			}
 		}
 	}
 	face, err := minigui.SystemFace(14)
@@ -293,9 +309,10 @@ func (o *overlay) drawShips(dst *ebiten.Image, emissive bool) {
 		if !s.Alive() {
 			continue
 		}
-		mesh := o.hulls[s.Faction].body
+		art := o.hulls[s.Faction][s.Kind]
+		mesh := art.body
 		if emissive {
-			mesh = o.hulls[s.Faction].glow
+			mesh = art.glow
 		}
 		var geo ebiten.GeoM
 		geo.Translate(-32, -32) // the hulls are 64x64 with the origin at the centre
@@ -306,10 +323,43 @@ func (o *overlay) drawShips(dst *ebiten.Image, emissive bool) {
 	}
 }
 
-// bulletColor is the tracer colour per faction, matching the hull art.
-var bulletColor = [skirmish.FactionCount]color.RGBA{
-	{0x80, 0xff, 0xff, 0xff},
-	{0xff, 0x5a, 0x4a, 0xff},
+// bulletColor is the tracer colour per faction: the side's anchor, so a shot
+// reads as coming from that side whatever hull fired it.
+var bulletColor = factionAnchor
+
+// hullAsset maps a profile kind to the asset that draws it. The grunt's profile
+// is named for the role it plays in linefire, where it is the enemy.
+func hullAsset(kind string) string {
+	if kind == "enemy" {
+		return "enemy"
+	}
+	return kind
+}
+
+// tintLayers returns a copy of the art with every colour pulled toward anchor.
+// The asset itself is left alone: the same layers are tinted twice, once per
+// faction.
+func tintLayers(layers []asset.Layer, anchor color.RGBA) []asset.Layer {
+	out := make([]asset.Layer, len(layers))
+	copy(out, layers)
+	for i := range out {
+		out[i].Stroke = tintHex(out[i].Stroke, anchor)
+		out[i].Fill = tintHex(out[i].Fill, anchor)
+	}
+	return out
+}
+
+// tintHex blends one colour toward anchor, leaving anything the renderer treats
+// as invisible untouched.
+func tintHex(hex string, anchor color.RGBA) string {
+	c, visible := render.ParseColor(hex)
+	if !visible {
+		return hex
+	}
+	mix := func(a, b uint8) uint8 {
+		return uint8(float64(a)*(1-factionMix) + float64(b)*factionMix)
+	}
+	return fmt.Sprintf("#%02x%02x%02x", mix(c.R, anchor.R), mix(c.G, anchor.G), mix(c.B, anchor.B))
 }
 
 // drawBullets draws shots as short tracers along their velocity, which reads
