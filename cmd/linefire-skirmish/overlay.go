@@ -51,17 +51,22 @@ type hull struct {
 }
 
 const (
-	// A portal is quick: it flares open, throws a ship out, and is gone inside
-	// half a second. Its life is built from the sim's lead so it can never close
-	// before delivering anything.
-	portalHold      = 18 // frames the vortex lingers once the ship is out
-	portalFrames    = skirmish.PortalLead + portalHold
+	// The vortex lives exactly as long as the sim's lead, so it finishes and
+	// vanishes on the frame the ship appears. Nothing overlaps: the motes fall in,
+	// the portal goes, and the hull is there — which is what materialising looks
+	// like, rather than a ship sliding out of a hole that is still open.
+	portalFrames    = skirmish.PortalLead
 	portalOpenSpeed = 4.0 // how much of its life it spends widening
 
-	// portalRadius is linefire's: its portal asset carries a 24-unit collision
-	// circle and the vortex is drawn 12 beyond it. Scaling that the same way the
-	// hulls are scaled keeps the portal in proportion to the ships coming out.
-	portalRadius = (24 + 12) * shipScale
+	// portalRadius starts from linefire's — a 24-unit collision circle with the
+	// vortex drawn beyond it — scaled the way the hulls are, opened out further so
+	// the convergence has room to be seen.
+	portalRadius = (24 + 24) * shipScale
+
+	// portalMoteSpeed is fast enough that a mote covers the whole rim-to-centre
+	// trip inside the portal's half second. At the package default it would still
+	// be a third of the way out when the vortex closed.
+	portalMoteSpeed = 2.0
 )
 
 // portal is one vortex the overlay is drawing. It is presentation only: the sim
@@ -274,6 +279,7 @@ func (o *overlay) drawPortals(dst *ebiten.Image) {
 			Radius:   portalRadius * min(age*portalOpenSpeed, 1),
 			Col:      factionPalette[p.faction].stroke,
 			Seconds:  seconds,
+			Speed:    portalMoteSpeed,
 			HideRing: true,        // a ship materialises; nothing here is a hole to fly into
 			Fade:     1 - age*age, // holds open, then goes quickly
 			DPR:      1,

@@ -46,11 +46,11 @@ const (
 	edgeMargin   = 100.0 // steer back once this close to the border
 	respawnDelay = 120   // ticks a destroyed ship waits before rejoining
 
-	// PortalLead is how long the vortex is open before the ship drops out of it.
-	// It is exported because whatever draws the portal has to outlast it, or the
-	// vortex would close before delivering anything. openingStagger spreads the
+	// PortalLead is how long a ship is announced before it exists. It is exported
+	// because whatever draws the arrival has that long to play it: the vortex runs
+	// its whole life inside this window and is gone by the time the hull appears. openingStagger spreads the
 	// first wave so the battle does not begin with every portal firing at once.
-	PortalLead     = 12
+	PortalLead     = 30
 	openingStagger = 90
 
 	// Separation, borrowed from flocking: a short-range push away from whatever is
