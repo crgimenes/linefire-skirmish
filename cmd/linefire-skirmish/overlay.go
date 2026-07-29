@@ -51,10 +51,10 @@ type hull struct {
 }
 
 const (
-	// A portal is a snap: it flares open, throws a ship out, and is gone inside a
-	// third of a second. Its life is built from the sim's lead so it can never
-	// close before delivering anything.
-	portalHold      = 12 // frames the vortex lingers once the ship is out
+	// A portal is quick: it flares open, throws a ship out, and is gone inside
+	// half a second. Its life is built from the sim's lead so it can never close
+	// before delivering anything.
+	portalHold      = 18 // frames the vortex lingers once the ship is out
 	portalFrames    = skirmish.PortalLead + portalHold
 	portalOpenSpeed = 4.0 // how much of its life it spends widening
 
@@ -271,21 +271,27 @@ func (o *overlay) drawPortals(dst *ebiten.Image) {
 		age := 1 - float64(p.left)/portalFrames // 0 when it opens, 1 as it closes
 		effects.DrawPortal(dst, effects.Portal{
 			X: p.x, Y: p.y,
-			Radius:  portalRadius * min(age*portalOpenSpeed, 1),
-			Col:     factionPalette[p.faction].stroke,
-			Seconds: seconds,
-			Fade:    1 - age*age, // holds open, then goes quickly
-			DPR:     1,
-			Scale:   1,
+			Radius:   portalRadius * min(age*portalOpenSpeed, 1),
+			Col:      factionPalette[p.faction].stroke,
+			Seconds:  seconds,
+			HideRing: true,        // a ship materialises; nothing here is a hole to fly into
+			Fade:     1 - age*age, // holds open, then goes quickly
+			DPR:      1,
+			Scale:    1,
 		})
 	}
 }
 
 func (o *overlay) Draw(screen *ebiten.Image) {
-	o.drawPortals(screen) // under everything: ships come OUT of it
-	o.drawShips(screen, false)
+	// Order is the effect: portals under everything because ships come out of
+	// them, then shots and exhaust, then the hulls on top. A muzzle flash or a
+	// plume drawn OVER its ship shows where it starts, which reads as a mark
+	// stuck to the hull; drawn under, the ship covers the origin and what is left
+	// is the part that should be seen.
+	o.drawPortals(screen)
 	o.drawBullets(screen, false)
 	o.fx.Draw(screen, fxView(false))
+	o.drawShips(screen, false)
 
 	// The bloom is the whole look: the crisp geometry above, plus an additive
 	// halo built from the same shapes drawn into the emissive buffer.
@@ -295,9 +301,9 @@ func (o *overlay) Draw(screen *ebiten.Image) {
 		Iterations: 2,
 		AntiAlias:  true,
 	}, func(emissive *ebiten.Image) {
-		o.drawShips(emissive, true)
 		o.drawBullets(emissive, true)
 		o.fx.Draw(emissive, fxView(true))
+		o.drawShips(emissive, true)
 	})
 
 	o.gui.Render(screen)

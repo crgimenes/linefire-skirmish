@@ -50,7 +50,7 @@ const (
 	// It is exported because whatever draws the portal has to outlast it, or the
 	// vortex would close before delivering anything. openingStagger spreads the
 	// first wave so the battle does not begin with every portal firing at once.
-	PortalLead     = 8
+	PortalLead     = 12
 	openingStagger = 90
 
 	// Separation, borrowed from flocking: a short-range push away from whatever is
