@@ -63,10 +63,12 @@ const (
 	// the convergence has room to be seen.
 	portalRadius = (24 + 24) * shipScale
 
-	// portalMoteSpeed is fast enough that a mote covers the whole rim-to-centre
-	// trip inside the portal's half second. At the package default it would still
-	// be a third of the way out when the vortex closed.
-	portalMoteSpeed = 2.0
+	// portalMoteSpeed makes the motes stream in hard: several full trips from rim
+	// to centre inside the portal's half second, so the arrival reads as energy
+	// being pulled into a point rather than dust drifting inward. One trip was
+	// enough to arrive and still looked slack; the package default would not even
+	// have finished one.
+	portalMoteSpeed = 6.0
 )
 
 // portal is one vortex the overlay is drawing. It is presentation only: the sim
