@@ -8,6 +8,8 @@ github.com/crgimenes/linefire v0.0.20 h1:5G0/bZXsrqU93wtUNFGG+ErwXjf5S7ojSPTwTGE
 github.com/crgimenes/linefire v0.0.20/go.mod h1:gh42UfxI2VZLCpzwqnHA61PZSGQM6e284qc5OhgCtWM=
 github.com/crgimenes/linefire v0.0.21 h1:flyRmZ2Aq2iybAwlkalAXJAxNeol/krofq3H/71q2VE=
 github.com/crgimenes/linefire v0.0.21/go.mod h1:gh42UfxI2VZLCpzwqnHA61PZSGQM6e284qc5OhgCtWM=
+github.com/crgimenes/linefire v0.0.22 h1:ToW+tMc66tfEktJjrGHCcrTI22bVX9jFTZWjKAAmKHw=
+github.com/crgimenes/linefire v0.0.22/go.mod h1:gh42UfxI2VZLCpzwqnHA61PZSGQM6e284qc5OhgCtWM=
 github.com/crgimenes/minigui v0.1.9 h1:D432XNJE4WsZBrFzmgzfTuTYw4yzBwAmmusCHKCebrk=
 github.com/crgimenes/minigui v0.1.9/go.mod h1:aP4n8LCLDaSL7pQDh4RyZ5qlFPGDvfhb9tFn6Fw9cRs=
 github.com/crgimenes/native v0.1.5 h1:DeuqxhlgEkOJGvLMole/8fzahW7vTpgtMkx+EmKD1/g=
