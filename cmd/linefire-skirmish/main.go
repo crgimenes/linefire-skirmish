@@ -15,7 +15,8 @@
 //	linefire-skirmish -sound     same, with the arcade attract-mode audio
 //	linefire-skirmish -debug     same, with the F3 debug HUD up
 //
-// Quit with Ctrl+C in the terminal that launched it (the window takes no input).
+// Quit with Ctrl+C in the terminal that launched it, or from its Dock icon — the
+// window itself takes no input.
 package main
 
 import (
@@ -63,9 +64,19 @@ func main() {
 		os.Exit(0)
 	}()
 
-	// A transparent, undecorated, always-on-top window covering the monitor,
-	// absent from the taskbar and never holding focus: the NeoFrame recipe. The
-	// desktop underneath stays fully usable — the overlay never takes the mouse.
+	// A transparent, undecorated, always-on-top window covering the monitor, never
+	// holding focus: the NeoFrame recipe. The desktop underneath stays fully
+	// usable — the overlay never takes the mouse.
+	//
+	// SkipTaskbar is deliberately NOT set, though NeoFrame sets it. Measured on
+	// macOS: a borderless, floating, taskbar-less window redrawing every frame
+	// presents at ~9 fps while Draw itself takes 2ms, and the frames queueing
+	// behind that push the process past 2 GB in under two minutes. Dropping
+	// SkipTaskbar alone restores ~54 fps and a flat 290 MB. NeoFrame gets away
+	// with it because it does not redraw every frame; this does.
+	//
+	// The Dock icon it costs is no loss: it is also how the user quits without
+	// the terminal, which a click-through window otherwise has no way to offer.
 	const name = "Linefire Skirmish"
 	width, height := ebiten.Monitor().Size()
 	ebiten.SetWindowDecorated(false)
@@ -79,7 +90,6 @@ func main() {
 	err = ebiten.RunGameWithOptions(g, &ebiten.RunGameOptions{
 		InitUnfocused:     true,
 		ScreenTransparent: true,
-		SkipTaskbar:       true,
 		X11ClassName:      name,
 		X11InstanceName:   name,
 	})
