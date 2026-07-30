@@ -13,7 +13,7 @@
 //
 //	linefire-skirmish            the battle, silent, over the desktop
 //	linefire-skirmish -sound     same, with the arcade attract-mode audio
-//	linefire-skirmish -debug     same, with the F3 debug HUD up
+//	linefire-skirmish -debug     same, with the debug HUD up
 //	linefire-skirmish -window    in an ordinary window, not over the desktop
 //
 // Quit with Ctrl+C in the terminal that launched it (the window takes no input).
@@ -32,9 +32,10 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
-// runWindowed shows the same battle in a plain window: decorated, opaque, and it
-// takes input like any app. It is a diagnostic, and it is also the easiest way to
-// look at the game while working on it.
+// runWindowed shows the same battle in a plain window: decorated and opaque, its
+// frame standing in for the arena border the overlay leaves to the screen edge.
+// The game still reads no keys. It is a diagnostic, and it is also the easiest
+// way to look at the game while working on it.
 func runWindowed(g *game.Game) {
 	ebiten.SetWindowSize(1280, 720)
 	ebiten.SetWindowTitle("Linefire Skirmish (windowed)")
