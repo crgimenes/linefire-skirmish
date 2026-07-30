@@ -14,6 +14,7 @@
 //	linefire-skirmish            the battle, silent, over the desktop
 //	linefire-skirmish -sound     same, with the arcade attract-mode audio
 //	linefire-skirmish -debug     same, with the F3 debug HUD up
+//	linefire-skirmish -window    in an ordinary window, not over the desktop
 //
 // Quit with Ctrl+C in the terminal that launched it (the window takes no input).
 package main
@@ -31,6 +32,18 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
+// runWindowed shows the same battle in a plain window: decorated, opaque, and it
+// takes input like any app. It is a diagnostic, and it is also the easiest way to
+// look at the game while working on it.
+func runWindowed(g *game.Game) {
+	ebiten.SetWindowSize(1280, 720)
+	ebiten.SetWindowTitle("Linefire Skirmish (windowed)")
+	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
+	if err := ebiten.RunGame(g); err != nil {
+		log.Fatalf("linefire-skirmish: %v", err)
+	}
+}
+
 // version is stamped at build time (-X main.version=...).
 var version = "dev"
 
@@ -39,6 +52,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	sound := flag.Bool("sound", false, "play the attract-mode audio (silent by default)")
 	debug := flag.Bool("debug", false, "start with the debug HUD up")
+	window := flag.Bool("window", false, "run in an ordinary window instead of over the desktop")
 	flag.Parse()
 
 	if *showVersion {
@@ -52,6 +66,18 @@ func main() {
 	})
 	if err != nil {
 		log.Fatalf("linefire-skirmish: %v", err)
+	}
+	if *debug {
+		w, h := ebiten.Monitor().Size()
+		log.Printf("monitor %dx%d, device scale %.2f", w, h, ebiten.Monitor().DeviceScaleFactor())
+	}
+
+	if *window {
+		// An ordinary opaque window, for when the question is whether the GAME is
+		// working or whether the OVERLAY is: if the battle shows up here and not over
+		// the desktop, the window flags are the suspect and not the drawing.
+		runWindowed(g)
+		return
 	}
 
 	// The window is click-through, so Ctrl+C in the launching terminal is the
@@ -76,18 +102,7 @@ func main() {
 	ebiten.SetWindowTitle(name)
 	ebiten.SetRunnableOnUnfocused(true)
 
-	// Vsync off, which is not the usual advice and is not about speed. Measured on
-	// macOS with this window — borderless, floating, covering the monitor: with
-	// vsync ON the loop presents at ~9 fps while Update and Draw together take
-	// under 3ms, and the frames waiting behind that are what grows the process.
-	// With it OFF the same build runs at ~56 fps with twenty ships alive and the
-	// memory stays flat, because Ebitengine then paces the loop on its own timer at
-	// the TPS target rather than on this window's display link. There is nothing to
-	// tear against either: the desktop underneath is not animating.
-	ebiten.SetVsyncEnabled(false)
-
 	err = ebiten.RunGameWithOptions(g, &ebiten.RunGameOptions{
-		InitUnfocused:     true,
 		ScreenTransparent: true,
 		SkipTaskbar:       true,
 		X11ClassName:      name,
