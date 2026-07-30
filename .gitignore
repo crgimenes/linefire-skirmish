@@ -34,3 +34,7 @@ go.work.sum
 # Working backlog: too volatile to publish, and a list in a public repo reads as
 # a promise. It stays a local file.
 TODO.md
+
+# The built binary shares its name with the module, so no extension pattern
+# catches it. Releases are GitHub artifacts, never git history.
+/linefire-skirmish
