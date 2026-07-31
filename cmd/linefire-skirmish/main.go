@@ -16,7 +16,11 @@
 //	linefire-skirmish -debug     same, with the debug HUD up
 //	linefire-skirmish -window    in an ordinary window, not over the desktop
 //
-// Quit with Ctrl+C in the terminal that launched it (the window takes no input).
+// The game reads no keys — every keystroke belongs to the desktop. The one
+// clickable thing is a small floating panel (NeoFrame-style), draggable by its
+// title bar, holding the controls the program needs because it has no real
+// window: Quit today, more later. Everywhere off the panel the mouse passes
+// straight through. Ctrl+C in the launching terminal also quits.
 package main
 
 import (
@@ -34,13 +38,15 @@ import (
 
 // runWindowed shows the same battle in a plain window: decorated and opaque, its
 // frame standing in for the arena border the overlay leaves to the screen edge.
-// The game still reads no keys. It is a diagnostic, and it is also the easiest
-// way to look at the game while working on it.
+// The game still reads no keys, and the panel works like anywhere else — minus
+// the passthrough dance, since an ordinary window owns its mouse. It is a
+// diagnostic, and it is also the easiest way to look at the game while working
+// on it.
 func runWindowed(g *game.Game) {
 	ebiten.SetWindowSize(1280, 720)
 	ebiten.SetWindowTitle("Linefire Skirmish (windowed)")
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
-	if err := ebiten.RunGame(g); err != nil {
+	if err := ebiten.RunGame(newShell(g, false)); err != nil {
 		log.Fatalf("linefire-skirmish: %v", err)
 	}
 }
@@ -81,8 +87,8 @@ func main() {
 		return
 	}
 
-	// The window is click-through, so Ctrl+C in the launching terminal is the
-	// off switch.
+	// The panel's Quit is the off switch; Ctrl+C in the launching terminal
+	// still works for the terminal-minded.
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -90,9 +96,10 @@ func main() {
 		os.Exit(0)
 	}()
 
-	// A transparent, undecorated, always-on-top window covering the monitor,
-	// absent from the taskbar and never holding focus: the NeoFrame recipe. The
-	// desktop underneath stays fully usable — the overlay never takes the mouse.
+	// A transparent, undecorated, always-on-top window covering the monitor:
+	// the NeoFrame recipe. The desktop underneath stays fully usable — the
+	// overlay takes the mouse only while the cursor is on the floating panel
+	// (the shell flips the passthrough flag per frame).
 	const name = "Linefire Skirmish"
 	width, height := ebiten.Monitor().Size()
 	ebiten.SetWindowDecorated(false)
@@ -103,7 +110,7 @@ func main() {
 	ebiten.SetWindowTitle(name)
 	ebiten.SetRunnableOnUnfocused(true)
 
-	err = ebiten.RunGameWithOptions(g, &ebiten.RunGameOptions{
+	err = ebiten.RunGameWithOptions(newShell(g, true), &ebiten.RunGameOptions{
 		ScreenTransparent: true,
 		SkipTaskbar:       true,
 		X11ClassName:      name,
