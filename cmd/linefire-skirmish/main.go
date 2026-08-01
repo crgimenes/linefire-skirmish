@@ -1,9 +1,10 @@
-// Command linefire-skirmish runs Linefire's attract demo over the desktop: an
-// indestructible autopilot ship fighting an endless horde in a procedurally
-// generated arena that regenerates every twenty seconds or so, drawn on a
-// transparent, undecorated, click-through window covering the monitor. There is
-// nothing to play — the mouse and keyboard pass straight through to whatever the
-// user is actually doing — it is Linefire playing itself, as entertainment.
+// Command linefire-skirmish runs Linefire's faction battle over the desktop:
+// two or more teams of autonomous ships — each in its own color, materialising
+// through its own vortex — hunting each other in a procedurally generated arena
+// that regenerates every twenty seconds or so, drawn on a transparent,
+// undecorated, click-through window covering the monitor. There is nothing to
+// pilot — the mouse and keyboard pass straight through to whatever the user is
+// actually doing — it is Linefire playing itself, as entertainment.
 //
 // The game is Linefire's, whole: this binary is only the window. All the code,
 // art and data come from the linefire module (the assets are embedded in it), so
@@ -11,10 +12,11 @@
 //
 // Usage:
 //
-//	linefire-skirmish            the battle, silent, over the desktop
-//	linefire-skirmish -sound     same, with the arcade attract-mode audio
-//	linefire-skirmish -debug     same, with the debug HUD up
-//	linefire-skirmish -window    in an ordinary window, not over the desktop
+//	linefire-skirmish              the battle, silent, over the desktop
+//	linefire-skirmish -factions 3  three teams instead of two (up to 8)
+//	linefire-skirmish -sound       same, with the arcade attract-mode audio
+//	linefire-skirmish -debug       same, with the debug HUD up
+//	linefire-skirmish -window      in an ordinary window, not over the desktop
 //
 // The game reads no keys — every keystroke belongs to the desktop. The one
 // clickable thing is a small floating panel (NeoFrame-style), draggable by its
@@ -60,6 +62,7 @@ func main() {
 	sound := flag.Bool("sound", false, "play the attract-mode audio (silent by default)")
 	debug := flag.Bool("debug", false, "start with the debug HUD up")
 	window := flag.Bool("window", false, "run in an ordinary window instead of over the desktop")
+	factions := flag.Int("factions", 2, "teams fighting in the arena (2-8)")
 	flag.Parse()
 
 	if *showVersion {
@@ -68,8 +71,9 @@ func main() {
 	}
 
 	g, err := game.NewSkirmish(linefire.Content(), "gameassets", game.SkirmishOptions{
-		Sound: *sound,
-		Debug: *debug,
+		Sound:    *sound,
+		Debug:    *debug,
+		Factions: *factions,
 	})
 	if err != nil {
 		log.Fatalf("linefire-skirmish: %v", err)
