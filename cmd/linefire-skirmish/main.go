@@ -17,6 +17,9 @@
 //	linefire-skirmish -map maze    fight in a cave labyrinth instead of the open
 //	linefire-skirmish -ai a.filo   faction 1 flies your Filo program (see ai/)
 //	linefire-skirmish -sim 100     fight 100 headless battles, print the score
+//	linefire-skirmish -sim 100 -trace t.jsonl   ...recording every battle as
+//	                               JSONL and running the invariant checker on it
+//	linefire-skirmish -check t.jsonl   re-run the checker over a saved trace
 //	linefire-skirmish -sound       same, with the arcade attract-mode audio
 //	linefire-skirmish -debug       same, with the debug HUD up
 //	linefire-skirmish -window      in an ordinary window, not over the desktop
@@ -37,6 +40,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -66,8 +70,21 @@ func runWindowed(g *game.Game) {
 // runSim fights n battles without a window at full CPU speed and prints the
 // scoreboard: the fast loop for developing an AI — change the program, run a
 // hundred fights, read numbers instead of eyeballing one battle. Each battle
-// gets its own seed, so the fleets land differently every time.
-func runSim(n int, programs, labels []string, factions int, mapMode string) {
+// gets its own seed and replays deterministically from it. With tracePath the
+// battles are also recorded as JSONL (all of them into one file) and the
+// invariant checker runs over the record before the scoreboard prints.
+func runSim(n int, programs, labels []string, factions int, mapMode, tracePath string) {
+	var trace io.Writer
+	var traceFile *os.File
+	if tracePath != "" {
+		f, err := os.Create(tracePath) // #nosec G304 -- the user names their own trace file
+		if err != nil {
+			log.Fatalf("linefire-skirmish: %v", err)
+		}
+		trace = f
+		traceFile = f
+	}
+
 	wins := map[int]int{}
 	totalTicks := 0
 	for i := range n {
@@ -76,6 +93,8 @@ func runSim(n int, programs, labels []string, factions int, mapMode string) {
 			Factions: factions,
 			Map:      mapMode,
 			Seed:     int64(i + 1),
+			Trace:    trace,
+			Battle:   i + 1,
 		})
 		if err != nil {
 			log.Fatalf("linefire-skirmish: %v", err)
@@ -95,6 +114,38 @@ func runSim(n int, programs, labels []string, factions int, mapMode string) {
 	fmt.Printf("draws: %d\n", wins[0])
 	fmt.Printf("battles: %d, avg %d ticks (%.1fs of game time each)\n",
 		n, totalTicks/n, float64(totalTicks)/float64(n)/60)
+
+	if traceFile != nil {
+		// The record must be safely on disk before anything audits it.
+		if err := traceFile.Close(); err != nil {
+			log.Fatalf("linefire-skirmish: %v", err)
+		}
+		fmt.Printf("trace: %s\n", tracePath)
+		checkTraceFile(tracePath)
+	}
+}
+
+// checkTraceFile runs the invariant checker over a saved trace and prints its
+// findings — the deterministic first pass of analysis; an AI (or a person)
+// reads the findings, not the megabytes.
+func checkTraceFile(path string) {
+	f, err := os.Open(path) // #nosec G304 -- the user names their own trace file
+	if err != nil {
+		log.Fatalf("linefire-skirmish: %v", err)
+	}
+	defer func() { _ = f.Close() }() // read-only: nothing to lose on close
+	finds, err := game.CheckTrace(f)
+	if err != nil {
+		log.Fatalf("linefire-skirmish: check: %v", err)
+	}
+	if len(finds) == 0 {
+		fmt.Println("check: no findings")
+		return
+	}
+	fmt.Printf("check: %d findings\n", len(finds))
+	for _, s := range finds {
+		fmt.Println("  " + s)
+	}
 }
 
 // readPrograms turns the -ai flag into one Filo source per faction: paths
@@ -136,6 +187,8 @@ func main() {
 	mapMode := flag.String("map", game.SkirmishMapArena, "battlefield: arena (open field) or maze (cave labyrinth)")
 	ai := flag.String("ai", "", "comma-separated .filo programs, one per faction in order (empty slot = built-in brain)")
 	sim := flag.Int("sim", 0, "fight N headless battles at full speed, print the scoreboard and exit (no window)")
+	trace := flag.String("trace", "", "with -sim: record every battle as JSONL to this file and run the invariant checker")
+	check := flag.String("check", "", "run the invariant checker over a saved trace file and exit")
 	flag.Parse()
 
 	if *showVersion {
@@ -148,8 +201,12 @@ func main() {
 		log.Fatalf("linefire-skirmish: %v", err)
 	}
 
+	if *check != "" {
+		checkTraceFile(*check)
+		return
+	}
 	if *sim > 0 {
-		runSim(*sim, programs, labels, *factions, *mapMode)
+		runSim(*sim, programs, labels, *factions, *mapMode, *trace)
 		return
 	}
 
