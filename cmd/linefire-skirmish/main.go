@@ -14,6 +14,7 @@
 //
 //	linefire-skirmish              the battle, silent, over the desktop
 //	linefire-skirmish -factions 3  three teams instead of two (up to 8)
+//	linefire-skirmish -map maze    fight in a cave labyrinth instead of the open
 //	linefire-skirmish -sound       same, with the arcade attract-mode audio
 //	linefire-skirmish -debug       same, with the debug HUD up
 //	linefire-skirmish -window      in an ordinary window, not over the desktop
@@ -63,6 +64,7 @@ func main() {
 	debug := flag.Bool("debug", false, "start with the debug HUD up")
 	window := flag.Bool("window", false, "run in an ordinary window instead of over the desktop")
 	factions := flag.Int("factions", 2, "teams fighting in the arena (2-8)")
+	mapMode := flag.String("map", game.SkirmishMapArena, "battlefield: arena (open field) or maze (cave labyrinth)")
 	flag.Parse()
 
 	if *showVersion {
@@ -74,6 +76,7 @@ func main() {
 		Sound:    *sound,
 		Debug:    *debug,
 		Factions: *factions,
+		Map:      *mapMode,
 	})
 	if err != nil {
 		log.Fatalf("linefire-skirmish: %v", err)
