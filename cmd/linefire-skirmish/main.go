@@ -15,6 +15,11 @@
 //	linefire-skirmish              the battle, silent, over the desktop
 //	linefire-skirmish -factions 3  three teams instead of two (up to 8)
 //	linefire-skirmish -map maze    fight in a cave labyrinth instead of the open
+//	linefire-skirmish -mode lastfleet   a real match: fleets land, no
+//	                               reinforcements, last faction standing
+//	                               prevails, rematch on a fresh field
+//	linefire-skirmish -mode timed -duration 120   most kills when time runs out
+//	linefire-skirmish -ships 6     fleet size per faction in a real match
 //	linefire-skirmish -ai a.filo   faction 1 flies your Filo program (see ai/)
 //	linefire-skirmish -ipc "python3 ai/bot.py"   faction 1 is flown by an
 //	                               EXTERNAL process over stdio JSONL (any
@@ -224,6 +229,9 @@ func main() {
 	window := flag.Bool("window", false, "run in an ordinary window instead of over the desktop")
 	factions := flag.Int("factions", 2, "teams fighting in the arena (2-8)")
 	mapMode := flag.String("map", game.SkirmishMapArena, "battlefield: arena (open field) or maze (cave labyrinth)")
+	mode := flag.String("mode", game.MatchEndless, "match mode: endless (the aquarium), lastfleet (annihilation) or timed")
+	ships := flag.Int("ships", 0, "fleet size per faction in a real match (default 8)")
+	duration := flag.Int("duration", 0, "timed mode deadline in seconds (default 120)")
 	ai := flag.String("ai", "", "comma-separated .filo programs, one per faction in order (empty slot = built-in brain)")
 	ipc := flag.String("ipc", "", "comma-separated commands, one per faction in order; each child pilots its faction over stdio JSONL")
 	sim := flag.Int("sim", 0, "fight N headless battles at full speed, print the scoreboard and exit (no window)")
@@ -260,6 +268,9 @@ func main() {
 		Debug:    *debug,
 		Factions: *factions,
 		Map:      *mapMode,
+		Mode:     *mode,
+		Ships:    *ships,
+		Duration: *duration,
 		Programs: programs,
 		IPC:      drivers,
 	})
