@@ -16,6 +16,7 @@
 //	linefire-skirmish -factions 3  three teams instead of two (up to 8)
 //	linefire-skirmish -map maze    fight in a cave labyrinth instead of the open
 //	linefire-skirmish -ai a.filo   faction 1 flies your Filo program (see ai/)
+//	linefire-skirmish -sim 100     fight 100 headless battles, print the score
 //	linefire-skirmish -sound       same, with the arcade attract-mode audio
 //	linefire-skirmish -debug       same, with the debug HUD up
 //	linefire-skirmish -window      in an ordinary window, not over the desktop
@@ -62,16 +63,51 @@ func runWindowed(g *game.Game) {
 	}
 }
 
+// runSim fights n battles without a window at full CPU speed and prints the
+// scoreboard: the fast loop for developing an AI — change the program, run a
+// hundred fights, read numbers instead of eyeballing one battle. Each battle
+// gets its own seed, so the fleets land differently every time.
+func runSim(n int, programs, labels []string, factions int, mapMode string) {
+	wins := map[int]int{}
+	totalTicks := 0
+	for i := range n {
+		res, err := game.RunBattle(linefire.Content(), "gameassets", game.BattleOptions{
+			Programs: programs,
+			Factions: factions,
+			Map:      mapMode,
+			Seed:     int64(i + 1),
+		})
+		if err != nil {
+			log.Fatalf("linefire-skirmish: %v", err)
+		}
+		wins[res.Winner]++
+		totalTicks += res.Ticks
+	}
+
+	teams := max(factions, 2)
+	for f := 1; f <= teams; f++ {
+		label := "house brain"
+		if f-1 < len(labels) && labels[f-1] != "" {
+			label = labels[f-1]
+		}
+		fmt.Printf("faction %d (%s): %d wins\n", f, label, wins[f])
+	}
+	fmt.Printf("draws: %d\n", wins[0])
+	fmt.Printf("battles: %d, avg %d ticks (%.1fs of game time each)\n",
+		n, totalTicks/n, float64(totalTicks)/float64(n)/60)
+}
+
 // readPrograms turns the -ai flag into one Filo source per faction: paths
 // separated by commas, assigned in faction order, an empty slot keeping that
 // faction on the built-in brain. Reading files is the shell's job — the game
 // takes source text and fails at launch on a broken program.
-func readPrograms(ai string) ([]string, error) {
+func readPrograms(ai string) (programs, labels []string, err error) {
 	if ai == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	paths := strings.Split(ai, ",")
-	programs := make([]string, len(paths))
+	programs = make([]string, len(paths))
+	labels = make([]string, len(paths))
 	for i, p := range paths {
 		p = strings.TrimSpace(p)
 		if p == "" {
@@ -79,11 +115,12 @@ func readPrograms(ai string) ([]string, error) {
 		}
 		src, err := os.ReadFile(p) // #nosec G304 -- the user names their own program file
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		programs[i] = string(src)
+		labels[i] = p
 	}
-	return programs, nil
+	return programs, labels, nil
 }
 
 // version is stamped at build time (-X main.version=...).
@@ -98,6 +135,7 @@ func main() {
 	factions := flag.Int("factions", 2, "teams fighting in the arena (2-8)")
 	mapMode := flag.String("map", game.SkirmishMapArena, "battlefield: arena (open field) or maze (cave labyrinth)")
 	ai := flag.String("ai", "", "comma-separated .filo programs, one per faction in order (empty slot = built-in brain)")
+	sim := flag.Int("sim", 0, "fight N headless battles at full speed, print the scoreboard and exit (no window)")
 	flag.Parse()
 
 	if *showVersion {
@@ -105,9 +143,14 @@ func main() {
 		return
 	}
 
-	programs, err := readPrograms(*ai)
+	programs, labels, err := readPrograms(*ai)
 	if err != nil {
 		log.Fatalf("linefire-skirmish: %v", err)
+	}
+
+	if *sim > 0 {
+		runSim(*sim, programs, labels, *factions, *mapMode)
+		return
 	}
 
 	g, err := game.NewSkirmish(linefire.Content(), "gameassets", game.SkirmishOptions{
