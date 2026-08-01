@@ -28,6 +28,9 @@
 //	linefire-skirmish -sim 100 -trace t.jsonl   ...recording every battle as
 //	                               JSONL and running the invariant checker on it
 //	linefire-skirmish -check t.jsonl   re-run the checker over a saved trace
+//	linefire-skirmish -control     the garage protocol: battle events out on
+//	                               stdout, match commands in on stdin (JSONL);
+//	                               e.g. {"op":"match","mode":"timed","ships":6}
 //	linefire-skirmish -sound       same, with the arcade attract-mode audio
 //	linefire-skirmish -debug       same, with the debug HUD up
 //	linefire-skirmish -window      in an ordinary window, not over the desktop
@@ -46,6 +49,8 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -157,6 +162,26 @@ func checkTraceFile(path string) {
 	}
 }
 
+// readControl feeds stdin's JSONL commands to the running game: the garage
+// (or any parent process, or a person with a terminal) reconfigures and
+// restages battles without relaunching the window. Closing stdin just ends
+// the feed — quitting stays the panel's and Ctrl+C's business.
+func readControl(g *game.Game) {
+	sc := bufio.NewScanner(os.Stdin)
+	for sc.Scan() {
+		line := sc.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var cmd game.MatchCommand
+		if err := json.Unmarshal(line, &cmd); err != nil {
+			log.Printf("control: bad line: %v", err)
+			continue
+		}
+		g.PostCommand(cmd)
+	}
+}
+
 // startDrivers turns the -ipc flag into one running child process per faction:
 // commands separated by commas, assigned in faction order, an empty slot
 // keeping that faction on Filo or the built-in brain. Each child speaks the
@@ -237,6 +262,7 @@ func main() {
 	sim := flag.Int("sim", 0, "fight N headless battles at full speed, print the scoreboard and exit (no window)")
 	trace := flag.String("trace", "", "with -sim: record every battle as JSONL to this file and run the invariant checker")
 	check := flag.String("check", "", "run the invariant checker over a saved trace file and exit")
+	control := flag.Bool("control", false, "the garage protocol: battle events as JSONL on stdout, match commands as JSONL on stdin")
 	flag.Parse()
 
 	if *showVersion {
@@ -263,7 +289,7 @@ func main() {
 		log.Fatalf("linefire-skirmish: %v", err)
 	}
 
-	g, err := game.NewSkirmish(linefire.Content(), "gameassets", game.SkirmishOptions{
+	opts := game.SkirmishOptions{
 		Sound:    *sound,
 		Debug:    *debug,
 		Factions: *factions,
@@ -273,9 +299,17 @@ func main() {
 		Duration: *duration,
 		Programs: programs,
 		IPC:      drivers,
-	})
+	}
+	if *control {
+		opts.Events = os.Stdout // stderr keeps the logs; stdout is the event stream
+	}
+
+	g, err := game.NewSkirmish(linefire.Content(), "gameassets", opts)
 	if err != nil {
 		log.Fatalf("linefire-skirmish: %v", err)
+	}
+	if *control {
+		go readControl(g)
 	}
 	if *debug {
 		w, h := ebiten.Monitor().Size()
