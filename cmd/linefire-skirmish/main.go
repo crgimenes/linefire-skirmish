@@ -16,6 +16,9 @@
 //	linefire-skirmish -factions 3  three teams instead of two (up to 8)
 //	linefire-skirmish -map maze    fight in a cave labyrinth instead of the open
 //	linefire-skirmish -ai a.filo   faction 1 flies your Filo program (see ai/)
+//	linefire-skirmish -ipc "python3 ai/bot.py"   faction 1 is flown by an
+//	                               EXTERNAL process over stdio JSONL (any
+//	                               language, any agent — see game/ipc.go)
 //	linefire-skirmish -sim 100     fight 100 headless battles, print the score
 //	linefire-skirmish -sim 100 -trace t.jsonl   ...recording every battle as
 //	                               JSONL and running the invariant checker on it
@@ -43,6 +46,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -148,6 +152,41 @@ func checkTraceFile(path string) {
 	}
 }
 
+// startDrivers turns the -ipc flag into one running child process per faction:
+// commands separated by commas, assigned in faction order, an empty slot
+// keeping that faction on Filo or the built-in brain. Each child speaks the
+// JSONL protocol of linefire's game/ipc.go over its own stdin/stdout; stderr
+// passes through, so a bot's own logs land in this terminal. When skirmish
+// exits, the children's stdin closes — a well-behaved bot exits with it.
+func startDrivers(ipc string) ([]*game.IPCDriver, error) {
+	if ipc == "" {
+		return nil, nil
+	}
+	cmds := strings.Split(ipc, ",")
+	drivers := make([]*game.IPCDriver, len(cmds))
+	for i, c := range cmds {
+		fields := strings.Fields(c)
+		if len(fields) == 0 {
+			continue
+		}
+		cmd := exec.Command(fields[0], fields[1:]...) // #nosec G204 -- the user names their own bot command
+		cmd.Stderr = os.Stderr
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			return nil, err
+		}
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			return nil, err
+		}
+		if err := cmd.Start(); err != nil {
+			return nil, fmt.Errorf("driver %q: %w", c, err)
+		}
+		drivers[i] = game.NewIPCDriver(stdout, stdin)
+	}
+	return drivers, nil
+}
+
 // readPrograms turns the -ai flag into one Filo source per faction: paths
 // separated by commas, assigned in faction order, an empty slot keeping that
 // faction on the built-in brain. Reading files is the shell's job — the game
@@ -186,6 +225,7 @@ func main() {
 	factions := flag.Int("factions", 2, "teams fighting in the arena (2-8)")
 	mapMode := flag.String("map", game.SkirmishMapArena, "battlefield: arena (open field) or maze (cave labyrinth)")
 	ai := flag.String("ai", "", "comma-separated .filo programs, one per faction in order (empty slot = built-in brain)")
+	ipc := flag.String("ipc", "", "comma-separated commands, one per faction in order; each child pilots its faction over stdio JSONL")
 	sim := flag.Int("sim", 0, "fight N headless battles at full speed, print the scoreboard and exit (no window)")
 	trace := flag.String("trace", "", "with -sim: record every battle as JSONL to this file and run the invariant checker")
 	check := flag.String("check", "", "run the invariant checker over a saved trace file and exit")
@@ -210,12 +250,18 @@ func main() {
 		return
 	}
 
+	drivers, err := startDrivers(*ipc)
+	if err != nil {
+		log.Fatalf("linefire-skirmish: %v", err)
+	}
+
 	g, err := game.NewSkirmish(linefire.Content(), "gameassets", game.SkirmishOptions{
 		Sound:    *sound,
 		Debug:    *debug,
 		Factions: *factions,
 		Map:      *mapMode,
 		Programs: programs,
+		IPC:      drivers,
 	})
 	if err != nil {
 		log.Fatalf("linefire-skirmish: %v", err)
