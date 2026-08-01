@@ -38,3 +38,6 @@ TODO.md
 # The built binary shares its name with the module, so no extension pattern
 # catches it. Releases are GitHub artifacts, never git history.
 /linefire-skirmish
+
+# Battle traces are working artifacts (and can be huge); they never ship.
+*.jsonl
