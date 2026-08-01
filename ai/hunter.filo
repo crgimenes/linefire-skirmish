@@ -8,7 +8,9 @@
 ; (def ...) survives to the next tick — that is the ship's memory — but the
 ; whole program re-runs every tick, so initialise memory only on the first one:
 
-(if first-tick (def patrol-heading 0))
+; Each ship starts its corner tour at a different point (derived from where it
+; materialised), so the fleet spreads instead of parading in single file.
+(if first-tick (def waypoint (floor (/ self-x 500))))
 
 ; The instruments are plain globals, refreshed every tick: self-x self-y
 ; self-heading self-hull self-speed self-radar fire-ready field-w field-h,
@@ -17,11 +19,16 @@
 ;   (kind x y heading dist)
 
 (if (is-empty enemies)
-    ; Nobody in sight: sweep the field. Turning a little each tick traces a
-    ; wide curve, which covers ground better than flying straight forever.
-    (do
-      (def patrol-heading (norm-angle (+ patrol-heading 0.4)))
-      (move (cos patrol-heading) (sin patrol-heading)))
+    ; Nobody in sight: patrol the field's corners with seek, which rides the
+    ; engine's pathfinding — in a maze this WALKS the corridors, where a blind
+    ; (move) would press into the first wall and stay there. Each ship starts
+    ; on a different corner (self-x varies) and advances when it arrives.
+    (let ((wx (if (< (mod waypoint 4) 2) 200 (- field-w 200)))
+          (wy (if (< (mod (+ waypoint 1) 4) 2) 200 (- field-h 200))))
+      (do
+        (if (< (dist self-x self-y wx wy) 120)
+            (def waypoint (+ waypoint 1)))
+        (seek wx wy)))
 
     ; Fight the nearest contact: face it, hold a fighting distance, shoot.
     (let ((target (head enemies)))
@@ -31,10 +38,13 @@
         (do
           ; Aim first. bearing gives the angle from us to them, in degrees.
           (face (bearing self-x self-y tx ty))
-          ; Too far: close in. Close enough: strafe sideways (the perpendicular
-          ; of the direction to the target), which makes us harder to hit.
+          ; Too far: close in with seek — it rides the engine's pathfinding,
+          ; so rock is walked around, not pressed into. Close enough: strafe
+          ; sideways with move (the perpendicular of the direction to the
+          ; target), which makes us harder to hit. One navigation order per
+          ; tick: the last of (seek)/(move) wins.
           (if (> d 240)
-              (move (- tx self-x) (- ty self-y))
+              (seek tx ty)
               (move (- self-y ty) (- tx self-x)))
           ; fire returns #t only when the shot actually leaves: the cooldown
           ; belongs to the engine, so spamming it is free and useless.
