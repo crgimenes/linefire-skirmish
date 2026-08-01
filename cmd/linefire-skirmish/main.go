@@ -15,9 +15,16 @@
 //	linefire-skirmish              the battle, silent, over the desktop
 //	linefire-skirmish -factions 3  three teams instead of two (up to 8)
 //	linefire-skirmish -map maze    fight in a cave labyrinth instead of the open
+//	linefire-skirmish -ai a.filo   faction 1 flies your Filo program (see ai/)
 //	linefire-skirmish -sound       same, with the arcade attract-mode audio
 //	linefire-skirmish -debug       same, with the debug HUD up
 //	linefire-skirmish -window      in an ordinary window, not over the desktop
+//
+// -ai takes comma-separated programs assigned to factions in order; an empty
+// slot keeps that faction on the built-in brain. "-ai a.filo,b.filo" pits two
+// programs against each other; "-ai ,b.filo" gives faction 2 the program and
+// faction 1 the house AI. Writing these programs IS how skirmish is played —
+// the contract they fly under is documented in linefire's game/pilot.go.
 //
 // The game reads no keys — every keystroke belongs to the desktop. The one
 // clickable thing is a small floating panel (NeoFrame-style), draggable by its
@@ -32,6 +39,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/crgimenes/linefire"
@@ -54,6 +62,30 @@ func runWindowed(g *game.Game) {
 	}
 }
 
+// readPrograms turns the -ai flag into one Filo source per faction: paths
+// separated by commas, assigned in faction order, an empty slot keeping that
+// faction on the built-in brain. Reading files is the shell's job — the game
+// takes source text and fails at launch on a broken program.
+func readPrograms(ai string) ([]string, error) {
+	if ai == "" {
+		return nil, nil
+	}
+	paths := strings.Split(ai, ",")
+	programs := make([]string, len(paths))
+	for i, p := range paths {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		src, err := os.ReadFile(p) // #nosec G304 -- the user names their own program file
+		if err != nil {
+			return nil, err
+		}
+		programs[i] = string(src)
+	}
+	return programs, nil
+}
+
 // version is stamped at build time (-X main.version=...).
 var version = "dev"
 
@@ -65,6 +97,7 @@ func main() {
 	window := flag.Bool("window", false, "run in an ordinary window instead of over the desktop")
 	factions := flag.Int("factions", 2, "teams fighting in the arena (2-8)")
 	mapMode := flag.String("map", game.SkirmishMapArena, "battlefield: arena (open field) or maze (cave labyrinth)")
+	ai := flag.String("ai", "", "comma-separated .filo programs, one per faction in order (empty slot = built-in brain)")
 	flag.Parse()
 
 	if *showVersion {
@@ -72,11 +105,17 @@ func main() {
 		return
 	}
 
+	programs, err := readPrograms(*ai)
+	if err != nil {
+		log.Fatalf("linefire-skirmish: %v", err)
+	}
+
 	g, err := game.NewSkirmish(linefire.Content(), "gameassets", game.SkirmishOptions{
 		Sound:    *sound,
 		Debug:    *debug,
 		Factions: *factions,
 		Map:      *mapMode,
+		Programs: programs,
 	})
 	if err != nil {
 		log.Fatalf("linefire-skirmish: %v", err)
