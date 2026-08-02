@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"sync"
+	"time"
 )
 
 // The garage is the player's workshop: a real window, in its own process,
@@ -65,6 +66,7 @@ type Garage struct {
 	stdin   io.WriteCloser
 	setup   Setup
 	board   map[int]*FleetBoard
+	ships   map[int]int // ship id -> faction, so a kill can be credited to a fleet
 	mode    string
 	mapName string
 	seed    int64
@@ -74,24 +76,58 @@ type Garage struct {
 }
 
 func newGarage(gamePath string) *Garage {
-	return &Garage{gamePath: gamePath, board: map[int]*FleetBoard{}}
+	return &Garage{gamePath: gamePath, board: map[int]*FleetBoard{}, ships: map[int]int{}}
 }
 
-// Deploy launches a battle: the game process starts (or, if it is already
-// flying, the running battle is reconfigured in place through the control
-// plane — no relaunch, no flicker).
+// Deploy launches a battle, or redeploys the flying one.
+//
+// Some of the setup is the match's and can be changed mid-flight through the
+// control plane — mode, fleet size, deadline — and some belongs to the game
+// PROCESS: which programs fly which factions, how many factions there are, the
+// battlefield, the window. Changing those means relaunching, and pretending
+// otherwise would relabel the board while the old programs kept flying.
 func (g *Garage) Deploy(s Setup) error {
 	g.mu.Lock()
 	running := g.cmd != nil
+	old := g.setup
 	g.setup = s
 	g.mu.Unlock()
 
-	if running {
+	if running && !needsRelaunch(old, s) {
 		return g.command(map[string]any{
 			"op": "match", "mode": s.Mode, "ships": s.Ships, "duration": s.Duration,
 		})
 	}
+	if running {
+		if err := g.Cease(); err != nil {
+			return err
+		}
+		g.awaitStopped()
+	}
 	return g.launch(s)
+}
+
+// needsRelaunch reports whether the change touches the game process's launch
+// flags rather than the running match.
+func needsRelaunch(old, next Setup) bool {
+	if old.Factions != next.Factions || old.Map != next.Map || old.Window != next.Window {
+		return true
+	}
+	return joinPrograms(old.Programs) != joinPrograms(next.Programs)
+}
+
+// awaitStopped waits briefly for the killed process to be reaped, so the new
+// battle never starts while the old one still owns the screen.
+func (g *Garage) awaitStopped() {
+	for range 50 {
+		g.mu.Lock()
+		gone := g.cmd == nil
+		g.mu.Unlock()
+		if gone {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // launch starts the game process with the setup's flags and begins reading
@@ -133,7 +169,7 @@ func (g *Garage) launch(s Setup) error {
 	g.mu.Lock()
 	g.cmd, g.stdin = cmd, stdin
 	g.battles, g.outcome, g.lastErr = 0, "", ""
-	g.board = map[int]*FleetBoard{}
+	g.board, g.ships = map[int]*FleetBoard{}, map[int]int{}
 	g.mu.Unlock()
 
 	go g.readEvents(stdout)
@@ -203,8 +239,9 @@ func (g *Garage) Status() Status {
 // is what keeps the protocol able to grow.
 type event struct {
 	Ev      string `json:"ev"`
+	ID      int    `json:"id"` // the SHIP's id, not its faction
 	Faction int    `json:"f"`
-	By      int    `json:"by"`
+	By      int    `json:"by"` // the shooter's SHIP id: whose it is comes from the spawn roll
 	Mode    string `json:"mode"`
 	MapName string `json:"map"`
 	Seed    int64  `json:"seed"`
@@ -247,7 +284,9 @@ func (g *Garage) apply(ev event) {
 		g.battles++
 		g.outcome = ""
 		g.board = map[int]*FleetBoard{} // a new battle, a clean board
+		g.ships = map[int]int{}
 	case "spawn":
+		g.ships[ev.ID] = ev.Faction // the roll: a kill names its shooter by SHIP
 		if b := fleet(ev.Faction); b != nil {
 			b.Alive++
 		}
@@ -260,7 +299,10 @@ func (g *Garage) apply(ev event) {
 			b.Alive--
 			b.Losses++
 		}
-		if b := fleet(ev.By); b != nil {
+		// The kill goes to the shooter's FLEET, and the shooter is named by
+		// ship id — it may even be dead by now, with its last bolt still in
+		// the air, which is why the roll is never pruned.
+		if b := fleet(g.ships[ev.By]); b != nil {
 			b.Kills++
 		}
 	case "result":

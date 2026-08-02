@@ -9,13 +9,17 @@ func TestGarageFoldsTheBattleStream(t *testing.T) {
 	g := newGarage("linefire-skirmish")
 	g.setup = Setup{Factions: 2, Programs: []string{"ai/hunter.filo", ""}}
 
+	// The ship ids here (7..10) deliberately match no faction number: a kill
+	// names its shooter by SHIP, and crediting the fleet means looking the
+	// ship up in the spawn roll. Ids that happened to equal faction numbers
+	// once hid this bug behind a coincidence.
 	for _, ev := range []event{
 		{Ev: "battle", Mode: "lastfleet", MapName: "Open Field", Seed: 42},
-		{Ev: "spawn", Faction: 1}, {Ev: "spawn", Faction: 1},
-		{Ev: "spawn", Faction: 2}, {Ev: "spawn", Faction: 2},
+		{Ev: "spawn", ID: 7, Faction: 1}, {Ev: "spawn", ID: 8, Faction: 1},
+		{Ev: "spawn", ID: 9, Faction: 2}, {Ev: "spawn", ID: 10, Faction: 2},
 		{Ev: "shot", Faction: 1}, {Ev: "shot", Faction: 1}, {Ev: "shot", Faction: 2},
-		{Ev: "death", Faction: 2, By: 1},
-		{Ev: "death", Faction: 2, By: 1},
+		{Ev: "death", ID: 9, Faction: 2, By: 7},
+		{Ev: "death", ID: 10, Faction: 2, By: 8},
 		{Ev: "result", Winner: 1, Ticks: 600},
 	} {
 		g.apply(ev)
@@ -57,6 +61,35 @@ func TestGarageReportsDraws(t *testing.T) {
 	g.apply(event{Ev: "result", Winner: 0, Ticks: 7200})
 	if got := g.Status().Outcome; got != "the battle ends in a draw after 120.0s" {
 		t.Fatalf("draw reported as %q", got)
+	}
+}
+
+// Some of the setup is the match's and changes mid-flight; some belongs to the
+// game process and needs a relaunch. Getting this wrong would relabel the
+// board while the old programs kept flying — the UI would be lying.
+func TestRelaunchOnlyForProcessSettings(t *testing.T) {
+	base := Setup{Mode: "lastfleet", Map: "arena", Factions: 2, Ships: 8, Duration: 120,
+		Programs: []string{"a.filo", ""}}
+
+	live := []Setup{base, base, base}
+	live[0].Mode = "timed"
+	live[1].Ships = 4
+	live[2].Duration = 60
+	for _, s := range live {
+		if needsRelaunch(base, s) {
+			t.Errorf("%+v is a match setting: it should change in flight", s)
+		}
+	}
+
+	proc := []Setup{base, base, base, base}
+	proc[0].Factions = 3
+	proc[1].Map = "maze"
+	proc[2].Window = true
+	proc[3].Programs = []string{"a.filo", "b.filo"}
+	for _, s := range proc {
+		if !needsRelaunch(base, s) {
+			t.Errorf("%+v is a launch flag: it needs a relaunch", s)
+		}
 	}
 }
 
