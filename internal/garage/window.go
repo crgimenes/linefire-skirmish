@@ -33,6 +33,10 @@ const (
 	garageMinHeight = 560
 )
 
+// testHook, when set by a test, receives the fully wired window just before it
+// navigates — the seam that lets the GUI scenario drive the real garage.
+var testHook func(w glaze.WebView)
+
 // Options configures the garage window.
 type Options struct {
 	// Game is the executable battles are launched from. Empty means THIS one:
@@ -185,6 +189,14 @@ func Run(opts Options) error {
 	}
 	if m != nil {
 		defer m.Release()
+	}
+
+	// The GUI scenario drives THIS window — the real garage, with its real
+	// menu, navigation and options — not a lookalike. Everything the editor's
+	// own scenario proved in glaze held, and the caret still would not move
+	// here, so the only truthful instrument is the garage itself.
+	if testHook != nil {
+		testHook(w)
 	}
 
 	w.Navigate(url)
