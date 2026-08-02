@@ -64,6 +64,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -75,8 +76,10 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/crgimenes/glaze"
 	"github.com/crgimenes/linefire"
 	"github.com/crgimenes/linefire-skirmish/internal/garage"
+	"github.com/crgimenes/linefire-skirmish/internal/icon"
 	"github.com/crgimenes/linefire/game"
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -248,6 +251,34 @@ func startDrivers(ipc string) ([]*game.IPCDriver, error) {
 	return drivers, nil
 }
 
+// wearTheIcon gives this process its face: the ship, drawn from the game's own
+// vector art (internal/icon).
+//
+// Both front doors are served from here because both are this one executable,
+// and the two platforms split the work: Windows and Linux draw a WINDOW icon,
+// which Ebitengine sets when it creates one, while macOS draws an APPLICATION
+// icon in the Dock, which is process-wide and belongs to AppKit. Neither
+// covers the icon on the executable FILE — that is a resource compiled into
+// it, and it is the one piece still missing.
+//
+// A failure here costs the icon and nothing else. A game that refuses to start
+// because it could not decorate itself would be a poor trade.
+func wearTheIcon() {
+	// The sizes a window manager picks from; more than one so it never has to
+	// scale a big bitmap down to a title bar.
+	ebiten.SetWindowIcon(icon.Images(16, 32, 48, 64, 128, 256))
+
+	png, err := icon.PNG(512)
+	if err != nil {
+		log.Printf("linefire-skirmish: no icon (%v)", err)
+		return
+	}
+	err = glaze.SetAppIcon(png)
+	if err != nil && !errors.Is(err, glaze.ErrIconUnsupported) {
+		log.Printf("linefire-skirmish: the Dock icon did not take (%v)", err)
+	}
+}
+
 // shellCommand builds the child process for one driver command, run by the
 // platform's own shell so the user's quoting is the shell's business and not
 // ours to half-implement.
@@ -313,6 +344,8 @@ func main() {
 		fmt.Println("linefire-skirmish", version)
 		return
 	}
+
+	wearTheIcon() // before either front door: the process has one face
 
 	// No arguments at all is the front door: the garage. Any argument means the
 	// caller knows what they want and gets the battle — which is why -play needs

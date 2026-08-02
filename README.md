@@ -17,6 +17,36 @@ Everything below is **one executable**. Installing it is copying one file:
 there is nothing beside it to find and no assets to ship along. Run it with no
 arguments and you get the garage; any flag goes straight to the battle.
 
+## Install
+
+Download the file for your platform from the
+[releases](https://github.com/crgimenes/linefire-skirmish/releases), unpack it,
+make it executable, and run it. There is no installer and no application
+bundle, because there is nothing to install: one file is the whole program.
+
+```bash
+gunzip linefire-skirmish-darwin-arm64.gz
+chmod +x linefire-skirmish-darwin-arm64
+./linefire-skirmish-darwin-arm64
+```
+
+On **macOS**, a binary downloaded by a browser is quarantined and Gatekeeper
+will refuse to open it — this build is not signed or notarised. Clear the flag
+once:
+
+```bash
+xattr -d com.apple.quarantine ./linefire-skirmish-darwin-arm64
+```
+
+On **Linux**, the battle needs the usual X11/OpenGL/ALSA runtime (any desktop
+has it), and the garage additionally needs a WebKitGTK runtime —
+`libwebkit2gtk-4.1-0` on Debian and Ubuntu, `webkit2gtk4.1` on Fedora. Without
+it the battle still runs from the command line; only the window that configures
+it is missing.
+
+Building from source needs nothing but Go: `make release` writes one compressed
+binary per platform into `dist/`, with `SHA256SUMS` beside them.
+
 ## The garage
 
 The workshop, in a real window, for everyone who will never open a terminal:
@@ -176,6 +206,23 @@ still alive.
 ```bash
 go run ./cmd/linefire-skirmish -ai ai/hunter.filo -sim 100 -trace battle.jsonl
 ```
+
+## The icon
+
+The application's face is the ship itself — not a drawing of it. The icon is
+rasterized from `gameassets/enemy.lfa`, the same vector hull every faction
+flies, in `game.FactionColor(1)`, the same red the first fleet wears on the
+battlefield. There is no image file in this repository and no art to keep in
+step: an icon that stopped looking like the game would mean the game changed.
+
+```bash
+make icons   # writes it out at four sizes, to look at
+```
+
+Windows and Linux draw a window icon, which Ebitengine sets; macOS draws an
+application icon in the Dock, which is process-wide. The icon on the executable
+FILE is a resource compiled into it — still missing on Windows, and the one
+piece of the packaging that is not done.
 
 ## License
 

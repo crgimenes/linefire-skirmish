@@ -5,7 +5,9 @@
 # Targets:
 #   make build       — build the binary for the current OS/arch into bin/
 #   make build-cross — also build for linux/amd64 and windows/amd64
-#   make release     — stamped standalone binaries for the desktop matrix
+#   make release     — the shipped artefacts: one stamped, compressed file per
+#                      platform in dist/, plus SHA256SUMS
+#   make icons       — write the application icon out as PNGs to look at
 #   make run         — the desktop overlay (the aquarium), i.e. -play
 #   make run-window  — the same battle in an ordinary window (what you want while working)
 #   make run-ai      — a windowed match with ai/hunter.filo flying faction 1
@@ -45,7 +47,7 @@ MAP      ?= arena
 AI       ?= ai/hunter.filo
 TRACE    ?= battle.jsonl
 
-.PHONY: all build build-cross release run run-window run-ai run-maze garage sim trace \
+.PHONY: all build build-cross release dist icons run run-window run-ai run-maze garage sim trace \
         check fix fix-inline vet fmt test live qa security tidy clean
 
 all: build
@@ -66,18 +68,35 @@ build-cross: build
 	  done ; \
 	done
 
-# The art and data come from the linefire module (embedded there), so these run
-# standalone from any directory — no assets to ship alongside.
-release:
-	@mkdir -p bin
+# ONE FILE per platform, and that is the whole distribution: the art, the data,
+# the garage's page and the icon all live inside it (go:embed, via the linefire
+# module), so installing is copying a file. No app bundle, no assets folder, no
+# second binary — the garage launches battles by re-running THIS file.
+#
+# Linux is missing here on purpose: Ebitengine needs cgo and X11/OpenGL there,
+# which a macOS desk cannot cross-compile. It is built natively when the GitHub
+# Release is published (.github/workflows/release-linux.yml).
+#
+# Each binary is compressed on its own rather than tarred with a README: what
+# is downloaded should be the program, not an archive to go looking inside.
+release: dist
+dist:
+	@rm -rf dist && mkdir -p dist
 	@for t in $(RELEASE_TARGETS); do \
 	  os=$${t%/*}; arch=$${t#*/}; ext=; [ "$$os" = windows ] && ext=.exe; \
-	  for cmd in $(CMDS); do \
-	    echo "  -> $$cmd-$$os-$$arch$$ext ($(VERSION))"; \
-	    GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "$(RELEASE_LDFLAGS)" \
-	      -o bin/$$cmd-$$os-$$arch$$ext ./cmd/$$cmd || exit 1 ; \
-	  done ; \
+	  name=linefire-skirmish-$$os-$$arch$$ext; \
+	  echo "  -> $$name ($(VERSION))"; \
+	  GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "$(RELEASE_LDFLAGS)" \
+	    -o dist/$$name ./cmd/linefire-skirmish || exit 1 ; \
+	  gzip -9 dist/$$name || exit 1 ; \
 	done
+	@cd dist && shasum -a 256 * > SHA256SUMS && cat SHA256SUMS
+
+# The icon, written out as PNGs to look at — the only way to judge one.
+icons:
+	@mkdir -p dist
+	SKIRMISH_ICON_DIR=$$PWD/dist go test -count 1 -run WriteTheIcons ./internal/icon/
+	@ls dist/*.png
 
 run:
 	go run $(RUN_FLAGS) ./cmd/linefire-skirmish -play
@@ -142,5 +161,5 @@ tidy:
 	go mod tidy
 
 clean:
-	rm -rf bin
+	rm -rf bin dist
 	rm -f $(TRACE)

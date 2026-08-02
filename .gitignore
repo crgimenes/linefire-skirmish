@@ -42,5 +42,7 @@ TODO.md
 # Battle traces are working artifacts (and can be huge); they never ship.
 *.jsonl
 
-# Build output (make build/release)
+# Build output (make build) and the shipped artefacts (make release/icons).
+# A release lives on GitHub, never in git history.
 /bin/
+/dist/
