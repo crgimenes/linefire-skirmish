@@ -9,8 +9,12 @@
 ; whole program re-runs every tick, so initialise memory only on the first one:
 
 ; Each ship starts its corner tour at a different point (derived from where it
-; materialised), so the fleet spreads instead of parading in single file.
-(if first-tick (def waypoint (floor (/ self-x 500))))
+; materialised), so the fleet spreads instead of parading in single file. BOTH
+; coordinates go into it: deriving the corner from self-x alone gave every hull
+; that landed down one side of the map the same destination, and a maze punishes
+; that — four of them were measured jammed shoulder to shoulder in one pocket,
+; each shoving the others into the rock, for a whole battle.
+(if first-tick (def waypoint (+ (floor (/ self-x 600)) (floor (/ self-y 400)))))
 
 ; The instruments are plain globals, refreshed every tick: self-x self-y
 ; self-heading self-hull self-hull-max self-shield self-speed self-radar
@@ -34,11 +38,16 @@
     ; Nobody in sight: patrol the field's corners with seek, which rides the
     ; engine's pathfinding — in a maze this WALKS the corridors, where a blind
     ; (move) would press into the first wall and stay there. Each ship starts
-    ; on a different corner (self-x varies) and advances when it arrives.
+    ; on a different corner (see waypoint above) and advances when it arrives.
     (let ((wx (if (< (mod waypoint 4) 2) 200 (- field-w 200)))
           (wy (if (< (mod (+ waypoint 1) 4) 2) 200 (- field-h 200))))
       (do
-        (if (< (dist self-x self-y wx wy) 120)
+        ; Two reasons to move on. Arriving is the obvious one. The other is the
+        ; engine telling us it has no route there at all — a maze puts corners
+        ; inside the rock, and self-nav-blocked is how the engine says so
+        ; instead of quietly grinding the hull against a wall. Either way, the
+        ; answer is the same: pick the next corner.
+        (if (or (< (dist self-x self-y wx wy) 120) self-nav-blocked)
             (def waypoint (+ waypoint 1)))
         (seek wx wy)))
 
