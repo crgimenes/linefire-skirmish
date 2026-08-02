@@ -4,6 +4,8 @@ github.com/crgimenes/filo v0.0.16 h1:/AEn/R5k33UXRfby/ZpJxIVWO5lQAPgnGmxM7eSUG7E
 github.com/crgimenes/filo v0.0.16/go.mod h1:kt2+3JJivo6/HWOJlphW7iIQdFoB3V5RnL+oBQcHN8w=
 github.com/crgimenes/gion v0.0.2 h1:J0cBNbR8O0FlSvVTforq3T+9oTjzXaD29GH+4X4Neeg=
 github.com/crgimenes/gion v0.0.2/go.mod h1:Vpql01hlzrUNNXXeCElbXMq5/QJ+4z7eM3z3XoPN7ls=
+github.com/crgimenes/glaze v0.0.33 h1:XZm2cFTSFSY7UarC4w/ziCMJ7Zwkce5Dh1NaO1Koj5Q=
+github.com/crgimenes/glaze v0.0.33/go.mod h1:ZuCIST0F5U6wJLw5ZtqfcTIQA7LI/m2MHv7iMOBmu6U=
 github.com/crgimenes/linefire v0.0.33 h1:7SkWCmKBkibLdAOv2eORGYHFjKub5JaJ+w6dmy+ng6g=
 github.com/crgimenes/linefire v0.0.33/go.mod h1:gh42UfxI2VZLCpzwqnHA61PZSGQM6e284qc5OhgCtWM=
 github.com/crgimenes/minigui v0.1.9 h1:D432XNJE4WsZBrFzmgzfTuTYw4yzBwAmmusCHKCebrk=

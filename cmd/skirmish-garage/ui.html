@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Linefire Skirmish — Garage</title>
+<style>
+  /* Linefire's own scheme: near-black field, cyan instruments. Nothing is
+     fetched from a network — the garage is a local workshop. */
+  :root {
+    --bg: #06080c;
+    --panel: #0d141c;
+    --line: #1e3844;
+    --ink: #c8f0ff;
+    --dim: #6f97a8;
+    --accent: #80ffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 18px;
+    background: var(--bg); color: var(--ink);
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  h1 { font-size: 15px; letter-spacing: 2px; text-transform: uppercase; margin: 0 0 2px; }
+  h2 { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--dim);
+       margin: 0 0 10px; font-weight: normal; }
+  header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+  .state { color: var(--dim); }
+  .state.live { color: var(--accent); }
+  .grid { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
+  section { background: var(--panel); border: 1px solid var(--line); padding: 14px; }
+  label { display: block; margin-bottom: 10px; color: var(--dim); }
+  select, input[type=number] {
+    width: 100%; margin-top: 3px; padding: 5px 6px;
+    background: #060c12; color: var(--ink);
+    border: 1px solid var(--line); font: inherit;
+  }
+  .check { display: flex; align-items: center; gap: 7px; color: var(--dim); margin-bottom: 12px; }
+  button {
+    font: inherit; padding: 7px 14px; cursor: pointer;
+    background: #12202a; color: var(--ink); border: 1px solid var(--line);
+    letter-spacing: 1px; text-transform: uppercase;
+  }
+  button:hover:not(:disabled) { background: #1e3844; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.go { border-color: var(--accent); color: var(--accent); }
+  .actions { display: flex; gap: 8px; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left; font-weight: normal; color: var(--dim);
+    text-transform: uppercase; font-size: 11px; letter-spacing: 1px;
+    border-bottom: 1px solid var(--line); padding: 0 8px 6px 0;
+  }
+  td { padding: 7px 8px 7px 0; border-bottom: 1px solid #12202a; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .swatch { display: inline-block; width: 9px; height: 9px; margin-right: 8px; }
+  .prog { color: var(--dim); }
+  .pick { padding: 2px 8px; font-size: 11px; text-transform: none; letter-spacing: 0; }
+  .outcome { margin-top: 12px; color: var(--accent); min-height: 1.5em; }
+  .err { margin-top: 8px; color: #ff8080; }
+  .foot { margin-top: 14px; color: var(--dim); font-size: 11px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Linefire Skirmish</h1>
+    <h2>Garage</h2>
+  </div>
+  <div id="state" class="state">no battle</div>
+</header>
+
+<div class="grid">
+  <section>
+    <h2>Battle</h2>
+    <label>Mode
+      <select id="mode">
+        <option value="lastfleet">Last fleet standing</option>
+        <option value="timed">Timed</option>
+        <option value="endless">Endless (aquarium)</option>
+      </select>
+    </label>
+    <label>Battlefield
+      <select id="map">
+        <option value="arena">Open field</option>
+        <option value="maze">Labyrinth</option>
+      </select>
+    </label>
+    <label>Factions
+      <input id="factions" type="number" min="2" max="8" value="2">
+    </label>
+    <label>Ships per fleet
+      <input id="ships" type="number" min="1" max="20" value="8">
+    </label>
+    <label>Deadline (seconds)
+      <input id="duration" type="number" min="10" max="900" value="120">
+    </label>
+    <div class="check">
+      <input id="window" type="checkbox">
+      <span>Windowed (not over the desktop)</span>
+    </div>
+    <div class="actions">
+      <button id="deploy" class="go">Deploy</button>
+      <button id="restage" disabled>Restage</button>
+      <button id="cease" disabled>Cease</button>
+    </div>
+    <div id="err" class="err"></div>
+  </section>
+
+  <section>
+    <h2>Fleets</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Faction</th><th>Program</th>
+          <th class="num">Alive</th><th class="num">Kills</th>
+          <th class="num">Losses</th><th class="num">Shots</th>
+        </tr>
+      </thead>
+      <tbody id="fleets"></tbody>
+    </table>
+    <div id="outcome" class="outcome"></div>
+    <div id="foot" class="foot"></div>
+  </section>
+</div>
+
+<script>
+// The eight bright VGA colours, in the game's own order: colour says WHICH
+// FACTION, here exactly as it does on the battlefield.
+const PALETTE = ["#ff5555", "#55ffff", "#55ff55", "#ff55ff",
+                 "#ffff55", "#5555ff", "#ffffff", "#555555"];
+
+// programs[i] is faction i+1's .filo file; "" leaves it on the house brain.
+let programs = ["", "", "", "", "", "", "", ""];
+
+const $ = (id) => document.getElementById(id);
+
+function setup() {
+  const factions = Number($("factions").value);
+  return {
+    mode: $("mode").value,
+    map: $("map").value,
+    factions: factions,
+    ships: Number($("ships").value),
+    duration: Number($("duration").value),
+    programs: programs.slice(0, factions),
+    window: $("window").checked,
+  };
+}
+
+async function guard(fn) {
+  try {
+    $("err").textContent = "";
+    await fn();
+  } catch (e) {
+    $("err").textContent = String(e);
+  }
+}
+
+$("deploy").onclick = () => guard(() => window.garage_deploy(setup()));
+$("restage").onclick = () => guard(() => window.garage_restage());
+$("cease").onclick = () => guard(() => window.garage_cease());
+
+// Picking a program is a native file dialog: the garage is a desktop app, so
+// it uses the desktop's own chooser.
+async function pick(faction) {
+  await guard(async () => {
+    const path = await window.pickProgram();
+    if (path) {
+      programs[faction - 1] = path;
+      await window.garage_deploy(setup()); // reconfigure so the board relabels
+    }
+  });
+}
+
+function fileName(p) {
+  const i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+  return i < 0 ? p : p.slice(i + 1);
+}
+
+function renderFleets(fleets) {
+  const rows = fleets.map((f) => {
+    const colour = PALETTE[(f.faction - 1) % PALETTE.length];
+    const chosen = programs[f.faction - 1];
+    const label = chosen ? fileName(chosen) : "house brain";
+    return `<tr>
+      <td><span class="swatch" style="background:${colour}"></span>${f.faction}</td>
+      <td><span class="prog">${label}</span>
+          <button class="pick" data-faction="${f.faction}">choose</button></td>
+      <td class="num">${f.alive}</td>
+      <td class="num">${f.kills}</td>
+      <td class="num">${f.losses}</td>
+      <td class="num">${f.shots}</td>
+    </tr>`;
+  });
+  $("fleets").innerHTML = rows.join("");
+  for (const b of document.querySelectorAll(".pick")) {
+    b.onclick = () => pick(Number(b.dataset.faction));
+  }
+}
+
+// The board is polled rather than pushed: the state is small, the window is
+// local, and a poll cannot fall behind a battle it is only watching.
+async function poll() {
+  try {
+    const st = await window.garage_status();
+    $("state").textContent = st.running
+      ? `${st.mode} · ${st.mapName || "…"} · battle ${st.battles}`
+      : "no battle";
+    $("state").className = st.running ? "state live" : "state";
+    $("deploy").textContent = st.running ? "Reconfigure" : "Deploy";
+    $("restage").disabled = !st.running;
+    $("cease").disabled = !st.running;
+    renderFleets(st.fleets || []);
+    $("outcome").textContent = st.outcome || "";
+    $("foot").textContent = st.seed ? `seed ${st.seed} · ${st.gamePath}` : st.gamePath;
+    if (st.lastErr) $("err").textContent = st.lastErr;
+  } catch (e) {
+    // The bridge is not up yet on the first frames; the next poll will do.
+  }
+}
+
+renderFleets([{faction: 1, alive: 0, kills: 0, losses: 0, shots: 0},
+              {faction: 2, alive: 0, kills: 0, losses: 0, shots: 0}]);
+$("factions").onchange = () => poll();
+setInterval(poll, 250);
+poll();
+</script>
+</body>
+</html>
