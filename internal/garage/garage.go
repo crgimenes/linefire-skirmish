@@ -47,15 +47,20 @@ type FleetBoard struct {
 
 // Status is the whole garage state the UI renders each poll.
 type Status struct {
-	Running  bool         `json:"running"`
-	Mode     string       `json:"mode"`
-	MapName  string       `json:"mapName"`
-	Seed     int64        `json:"seed"`
-	Battles  int          `json:"battles"`
-	Fleets   []FleetBoard `json:"fleets"`
-	Outcome  string       `json:"outcome"`
-	LastErr  string       `json:"lastErr"`
-	GamePath string       `json:"gamePath"`
+	Running bool `json:"running"`
+	// Launching is the gap the user actually feels: the process is up but the
+	// battle has not reported in yet — a window has to be created, the view has
+	// to settle and the fleets have to land, which is seconds. Without a name
+	// for this state the garage looked idle and Deploy invited another click.
+	Launching bool         `json:"launching"`
+	Mode      string       `json:"mode"`
+	MapName   string       `json:"mapName"`
+	Seed      int64        `json:"seed"`
+	Battles   int          `json:"battles"`
+	Fleets    []FleetBoard `json:"fleets"`
+	Outcome   string       `json:"outcome"`
+	LastErr   string       `json:"lastErr"`
+	GamePath  string       `json:"gamePath"`
 }
 
 // Garage runs the game process and keeps the board. Every exported method is
@@ -248,7 +253,8 @@ func (g *Garage) Status() Status {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	st := Status{
-		Running: g.cmd != nil, Mode: g.mode, MapName: g.mapName, Seed: g.seed,
+		Running: g.cmd != nil, Launching: g.cmd != nil && g.battles == 0,
+		Mode: g.mode, MapName: g.mapName, Seed: g.seed,
 		Battles: g.battles, Outcome: g.outcome, LastErr: g.lastErr, GamePath: g.gamePath,
 	}
 	for f := 1; f <= g.setup.Factions; f++ {

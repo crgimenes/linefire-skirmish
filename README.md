@@ -38,8 +38,12 @@ soundtrack here — the songs belong to Linefire's arcade cabinet; what you get
 is the fighting.
 
 A real match (`lastfleet` or `timed`) ENDS: the winning faction is named on
-screen, in its own colour, and the field stays as it was. Another battle is a
-Restage or a new Deploy away.
+screen in its own colour, and the battle FREEZES where it finished. Another one
+is a Restage or a new Deploy away.
+
+Deploy takes about a second to put a battle on screen — a window has to be
+created and the view has to settle — so the garage says `launching…` and holds
+the row until the battle reports in. There is nothing to click twice.
 
 The garage has a real menu bar, and on macOS that is not decoration: a WebView
 has no route to the editing commands without one, so `Cmd+C` and `Cmd+V` would

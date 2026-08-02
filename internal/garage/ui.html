@@ -43,7 +43,20 @@
   }
   .state.live { color: var(--accent); }
   .state.live::before { background: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
+  /* Launching is its own state, not a slower kind of idle: the process is up
+     and the battle is still building its window. */
+  .state.booting { color: var(--ink); }
+  .state.booting::before { background: var(--ink); animation: pulse .7s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .25; } }
+
+  /* The bar under the actions row IS the wait: it runs while a battle is
+     coming up, so the click is visibly doing something and a second one has
+     nothing to land on. */
+  .launchbar { height: 2px; margin-top: 10px; background: #12202a; overflow: hidden; }
+  .launchbar[hidden] { display: none; }
+  .launchbar > i { display: block; height: 100%; width: 34%; background: var(--accent);
+                   animation: sweep 1.1s ease-in-out infinite; }
+  @keyframes sweep { from { transform: translateX(-110%); } to { transform: translateX(340%); } }
 
   /* Two columns while there is room for both; one when the window is narrow.
      The setup column never grows past what its controls need. */
@@ -207,6 +220,7 @@
       <button id="restage" disabled>Restage</button>
       <button id="cease" disabled>Cease</button>
     </div>
+    <div id="launchbar" class="launchbar" hidden><i></i></div>
     <div id="err" class="err"></div>
   </section>
 
@@ -288,9 +302,9 @@ function setup() {
 // once and the board is refreshed as soon as the order lands, instead of
 // waiting for the next poll to notice. Launching a battle takes the time it
 // takes to start a process — the point is that the click never feels ignored.
-let busy = false;
+let busy = false, launching = false;
 async function guard(fn) {
-  if (busy) return;
+  if (busy || launching) return; // a battle already on its way owns the row
   busy = true;
   $("actions").classList.add("busy");
   try {
@@ -431,13 +445,19 @@ function paintFleets(fleets) {
 async function poll() {
   try {
     const st = await window.garage_status();
-    $("state").textContent = st.running
-      ? `${st.mode} · ${st.mapName || "…"} · battle ${st.battles}`
-      : "no battle";
-    $("state").className = st.running ? "state live" : "state";
+    launching = !!st.launching;
+    $("state").textContent = st.launching
+      ? "launching…"
+      : st.running ? `${st.mode} · ${st.mapName || "…"} · battle ${st.battles}` : "no battle";
+    $("state").className = st.launching ? "state booting" : st.running ? "state live" : "state";
     $("deploy").textContent = st.running ? "Redeploy" : "Deploy";
-    $("restage").disabled = !st.running;
-    $("cease").disabled = !st.running;
+    // While a battle is coming up the whole row is out of reach: the wait is
+    // seconds, and without this Deploy took every click that landed in them.
+    $("launchbar").hidden = !st.launching;
+    $("actions").classList.toggle("busy", busy || st.launching);
+    $("deploy").disabled = st.launching;
+    $("restage").disabled = !st.running || st.launching;
+    $("cease").disabled = !st.running || st.launching;
     paintFleets(st.fleets || []);
     $("outcome").textContent = st.outcome || "";
     $("foot").textContent = st.seed ? `seed ${st.seed} · ${st.gamePath}` : st.gamePath;

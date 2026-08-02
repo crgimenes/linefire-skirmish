@@ -131,3 +131,42 @@ func TestUncheckingWindowedReplacesTheBattle(t *testing.T) {
 		t.Errorf("process %d is still alive after being replaced", first)
 	}
 }
+
+// Deploy returns the moment the process starts, but the battle takes seconds
+// to appear — a window has to be created and the view has to settle. crg had
+// time to click Deploy several times into that gap because nothing on screen
+// said anything was happening. Launching is that gap, named: true from the
+// launch until the battle reports in, which is what the page disables the row
+// and runs the bar on.
+func TestLaunchingCoversTheGapUntilTheBattleReportsIn(t *testing.T) {
+	bin := os.Getenv("SKIRMISH_GAME")
+	if bin == "" {
+		t.Skip("SKIRMISH_GAME is not set: skipping the live battle")
+	}
+	g := newGarage(bin)
+	defer func() { _ = g.Cease() }()
+
+	if st := g.Status(); st.Launching {
+		t.Fatal("an idle garage reports itself launching")
+	}
+	start := time.Now()
+	if err := g.Deploy(Setup{Mode: "lastfleet", Map: "arena", Factions: 2, Ships: 3, Window: true}); err != nil {
+		t.Fatalf("deploy: %v", err)
+	}
+	if st := g.Status(); !st.Launching || !st.Running {
+		t.Fatalf("right after Deploy: launching=%v running=%v — the gap is unnamed", st.Launching, st.Running)
+	}
+
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		if !g.Status().Launching {
+			t.Logf("the gap the user was clicking into: %s", time.Since(start).Round(time.Millisecond))
+			if !g.Status().Running {
+				t.Fatal("stopped launching by dying rather than by starting")
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("still launching after 20s")
+}
