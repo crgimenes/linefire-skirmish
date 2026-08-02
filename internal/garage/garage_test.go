@@ -1,6 +1,7 @@
 package garage
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -135,5 +136,40 @@ func TestTheGarageTakesItsFocusBackWhenTheBattleIsUp(t *testing.T) {
 	case <-reclaimed:
 		t.Fatal("a later battle stole the focus back; only the first may")
 	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// Sound is a LAUNCH flag: a process already flying cannot grow ears, so
+// toggling it has to relaunch rather than restage the running match. And it is
+// off unless asked — the overlay is something people leave running over their
+// desktop while doing something else, and a battle that starts making noise on
+// its own is a battle they close.
+func TestSoundIsOffByDefaultAndNeedsARelaunch(t *testing.T) {
+	quiet := Setup{Mode: "lastfleet", Map: "arena", Factions: 2, Ships: 4}
+	if quiet.Sound {
+		t.Fatal("the zero setup asks for sound; silence must be what you get for free")
+	}
+	loud := quiet
+	loud.Sound = true
+
+	if !needsRelaunch(quiet, loud) {
+		t.Error("turning sound on did not relaunch: the running process would stay silent")
+	}
+	if !needsRelaunch(loud, quiet) {
+		t.Error("turning sound off did not relaunch: the running process would keep playing")
+	}
+	// Anything that is not a launch flag must still restage in place.
+	louder := loud
+	louder.Ships = 6
+	if needsRelaunch(loud, louder) {
+		t.Error("a fleet-size change relaunched the process instead of restaging the match")
+	}
+
+	// And the flag has to actually reach the game's command line.
+	if slices.Contains(launchArgs(quiet), "-sound") {
+		t.Error("a silent setup still passed -sound")
+	}
+	if !slices.Contains(launchArgs(loud), "-sound") {
+		t.Error("sound was asked for and -sound never reached the game")
 	}
 }

@@ -135,6 +135,14 @@ func Run(opts Options) error {
 		return err
 	}
 
+	m, err := installMenu(w, w.Terminate)
+	if err != nil {
+		log.Printf("garage: no menu bar (%v); Cmd+C/V will not reach the text fields", err)
+	}
+	if m != nil {
+		defer m.Release()
+	}
+
 	w.Navigate(url)
 	w.Run()
 

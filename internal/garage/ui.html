@@ -175,6 +175,10 @@
       <input id="window" type="checkbox">
       <span>Windowed (not over the desktop)</span>
     </div>
+    <div class="check">
+      <input id="sound" type="checkbox">
+      <span>Sound (off by default)</span>
+    </div>
     <div class="actions" id="actions">
       <button id="deploy" class="go">Deploy</button>
       <button id="restage" disabled>Restage</button>
@@ -231,6 +235,7 @@ function setup() {
     duration: Number($("duration").value),
     programs: programs.slice(0, factions),
     window: $("window").checked,
+    sound: $("sound").checked,
   };
 }
 

@@ -30,6 +30,7 @@ type Setup struct {
 	Duration int      `json:"duration"`
 	Programs []string `json:"programs"` // one .filo path per faction, "" = house brain
 	Window   bool     `json:"window"`   // an ordinary window instead of the desktop overlay
+	Sound    bool     `json:"sound"`    // play the battle's audio; OFF by default
 }
 
 // FleetBoard is one faction's live standing, as the garage understands it
@@ -117,6 +118,9 @@ func needsRelaunch(old, next Setup) bool {
 	if old.Factions != next.Factions || old.Map != next.Map || old.Window != next.Window {
 		return true
 	}
+	if old.Sound != next.Sound {
+		return true // -sound is a LAUNCH flag: the running process cannot grow ears
+	}
 	return joinPrograms(old.Programs) != joinPrograms(next.Programs)
 }
 
@@ -134,9 +138,9 @@ func (g *Garage) awaitStopped() {
 	}
 }
 
-// launch starts the game process with the setup's flags and begins reading
-// its event stream.
-func (g *Garage) launch(s Setup) error {
+// launchArgs is the setup as the game's own command line. Pure, so what the
+// garage is about to ask for can be asserted without starting a process.
+func launchArgs(s Setup) []string {
 	args := []string{
 		"-control",
 		"-mode", s.Mode,
@@ -155,6 +159,19 @@ func (g *Garage) launch(s Setup) error {
 	if s.Window {
 		args = append(args, "-window")
 	}
+	// Silent unless asked: the overlay is something people leave running over
+	// their desktop while doing something else, and a battle that starts making
+	// noise on its own is a battle they close.
+	if s.Sound {
+		args = append(args, "-sound")
+	}
+	return args
+}
+
+// launch starts the game process with the setup's flags and begins reading
+// its event stream.
+func (g *Garage) launch(s Setup) error {
+	args := launchArgs(s)
 
 	cmd := exec.Command(g.gamePath, args...) // #nosec G204 -- the game binary the garage ships with
 	cmd.Stderr = os.Stderr

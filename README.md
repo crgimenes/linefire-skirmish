@@ -30,6 +30,15 @@ It launches the battle in its own process — the same executable, re-run with
 `-control` — and talks to it over the control protocol, so a battle can be
 reconfigured or restaged without closing anything.
 
+Sound is a checkbox there, **off by default**: the overlay is something you
+leave running over your desktop while doing something else, and a battle that
+starts making noise on its own is a battle you close. Turning it on relaunches
+the battle, because a process already flying cannot grow ears.
+
+The garage has a real menu bar, and on macOS that is not decoration: a WebView
+has no route to the editing commands without one, so `Cmd+C` and `Cmd+V` would
+do nothing in every text field on the page.
+
 ## The battle
 
 ```bash
