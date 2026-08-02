@@ -71,6 +71,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -213,6 +214,12 @@ func readControl(g *game.Game) {
 // JSONL protocol of linefire's game/ipc.go over its own stdin/stdout; stderr
 // passes through, so a bot's own logs land in this terminal. When skirmish
 // exits, the children's stdin closes — a well-behaved bot exits with it.
+//
+// The command runs through the SHELL, which is what a typed command means to
+// the person typing it: quoted arguments hold together and a path with a space
+// in it stays one path. Splitting on whitespace instead turned
+// "python3 ~/my bot/agent.py" into two arguments and a mystery, and the garage
+// asks for these commands in a text field.
 func startDrivers(ipc string) ([]*game.IPCDriver, error) {
 	if ipc == "" {
 		return nil, nil
@@ -220,11 +227,10 @@ func startDrivers(ipc string) ([]*game.IPCDriver, error) {
 	cmds := strings.Split(ipc, ",")
 	drivers := make([]*game.IPCDriver, len(cmds))
 	for i, c := range cmds {
-		fields := strings.Fields(c)
-		if len(fields) == 0 {
+		if strings.TrimSpace(c) == "" {
 			continue
 		}
-		cmd := exec.Command(fields[0], fields[1:]...) // #nosec G204 -- the user names their own bot command
+		cmd := shellCommand(c)
 		cmd.Stderr = os.Stderr
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
@@ -240,6 +246,16 @@ func startDrivers(ipc string) ([]*game.IPCDriver, error) {
 		drivers[i] = game.NewIPCDriver(stdout, stdin)
 	}
 	return drivers, nil
+}
+
+// shellCommand builds the child process for one driver command, run by the
+// platform's own shell so the user's quoting is the shell's business and not
+// ours to half-implement.
+func shellCommand(line string) *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		return exec.Command("cmd", "/c", line) // #nosec G204 -- the user names their own bot command
+	}
+	return exec.Command("/bin/sh", "-c", line) // #nosec G204 -- the user names their own bot command
 }
 
 // readPrograms turns the -ai flag into one Filo source per faction: paths

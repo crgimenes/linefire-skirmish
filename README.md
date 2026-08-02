@@ -140,6 +140,16 @@ seconds — an LLM agent, say — still flies ships that act every tick.
 go run ./cmd/linefire-skirmish -ipc "python3 ai/bot.py"
 ```
 
+The garage offers the same thing without a terminal: **agent** on a fleet row
+turns that faction over to a command you type, next to the factions flying
+`.filo` files — one fleet list, two kinds of pilot, battling each other. The
+command runs under your shell, so quoting and paths with spaces work; commas
+do not, because commas are what separate one faction's command from the next
+(put it in a script and call the script). When an agent crashes or closes its
+stream its ships fall back to the built-in brain, and the row says so — a
+fleet quietly flying differently is exactly what you would otherwise waste an
+afternoon debugging.
+
 ## Developing an AI
 
 Battles run without a window at full speed, which is how a program is actually

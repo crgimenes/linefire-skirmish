@@ -2,6 +2,7 @@ package garage
 
 import (
 	"os"
+	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
@@ -169,4 +170,126 @@ func TestLaunchingCoversTheGapUntilTheBattleReportsIn(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatal("still launching after 20s")
+}
+
+// agentScript writes a driver that flies whatever fleet it is given: on every
+// state line it restates one standing order for every plausible ship id —
+// move east, never fire. Not knowing which ids it owns is fine, since an order
+// for a ship that is not yours is an order nobody reads.
+//
+// It is a FILE, not an inline command, and that is the documented workaround
+// for the one sharp edge of -ipc: commands are separated by commas, so a
+// command containing one cannot be written inline (the garage refuses it
+// rather than launching a battle the user did not describe).
+func agentScript(t *testing.T) string {
+	t.Helper()
+	const src = `
+o=""
+i=1
+while [ $i -le 64 ]; do
+  o="$o{\"id\":$i,\"move\":[1,0]}"
+  [ $i -lt 64 ] && o="$o,"
+  i=$((i+1))
+done
+o="{\"orders\":[$o]}"
+while IFS= read -r line; do printf '%s\n' "$o"; done
+`
+	path := filepath.Join(t.TempDir(), "agent.sh")
+	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+		t.Fatalf("writing the agent: %v", err)
+	}
+	return path
+}
+
+// The whole external-pilot chain against the real game: the garage passes the
+// command as -ipc, the game runs it, and its orders fly a faction — the door
+// an LLM agent (or a program in any language) comes through.
+//
+// The proof is an ASYMMETRY the board can see. A ship under a standing order
+// is flown by that order alone: the house brain, which is what makes ships
+// hunt and shoot, never runs for it. So an agent that orders movement and
+// never orders fire produces a fleet that barely shoots, next to a
+// house-brain fleet that shoots steadily. Counting shots on one fleet would
+// prove nothing — both would climb.
+func TestLiveAgentFliesAFaction(t *testing.T) {
+	bin := os.Getenv("SKIRMISH_GAME")
+	if bin == "" {
+		t.Skip("SKIRMISH_GAME is not set: skipping the live battle")
+	}
+	command := "/bin/sh " + agentScript(t)
+
+	g := newGarage(bin)
+	defer func() { _ = g.Cease() }()
+	err := g.Deploy(Setup{
+		Mode: "endless", Map: "arena", Factions: 2,
+		Commands: []string{command, ""},
+		Window:   true,
+	})
+	if err != nil {
+		t.Fatalf("deploy: %v", err)
+	}
+
+	deadline := time.Now().Add(40 * time.Second)
+	var st Status
+	for time.Now().Before(deadline) {
+		st = g.Status()
+		if st.Battles > 0 && st.Fleets[1].Shots > 20 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if st.Battles == 0 {
+		t.Fatalf("no battle was announced: the game may have refused the agent: %+v", st)
+	}
+	if st.Fleets[1].Shots <= 20 {
+		t.Fatalf("the house-brain fleet never got going, so there is nothing to compare: %+v", st.Fleets)
+	}
+	if st.Fleets[0].Down != "" {
+		t.Fatalf("the agent stopped flying: %s", st.Fleets[0].Down)
+	}
+	// A few shots are honest: between the fleet landing and the agent's first
+	// order there is a breath during which the house brain still flies them.
+	if st.Fleets[0].Shots > st.Fleets[1].Shots/4 {
+		t.Fatalf("the agent's fleet fired %d against the house brain's %d: its orders are not flying the ships",
+			st.Fleets[0].Shots, st.Fleets[1].Shots)
+	}
+	if st.Fleets[0].Program != command {
+		t.Errorf("the board should name the agent flying fleet 1, got %q", st.Fleets[0].Program)
+	}
+}
+
+// An agent that dies hands its faction back to the house brain — and the
+// board says so. Without this the fleet just carries on flying differently,
+// and the user cannot tell a crashed program from a program that decided to
+// patrol. The whole chain is under test: the child exits, the engine notices,
+// it says so on the control stream, and the garage puts it on the board.
+func TestLiveDeadAgentIsReportedOnTheBoard(t *testing.T) {
+	bin := os.Getenv("SKIRMISH_GAME")
+	if bin == "" {
+		t.Skip("SKIRMISH_GAME is not set: skipping the live battle")
+	}
+
+	g := newGarage(bin)
+	defer func() { _ = g.Cease() }()
+	err := g.Deploy(Setup{
+		Mode: "endless", Map: "arena", Factions: 2,
+		Commands: []string{"exit 3", ""}, // a program that dies at once
+		Window:   true,
+	})
+	if err != nil {
+		t.Fatalf("deploy: %v", err)
+	}
+
+	deadline := time.Now().Add(40 * time.Second)
+	for time.Now().Before(deadline) {
+		st := g.Status()
+		if st.Fleets[0].Down != "" {
+			if !st.Running {
+				t.Fatal("the game died with its agent; a dead driver must only cost its faction")
+			}
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("the agent died and the board never said so: %+v", g.Status().Fleets)
 }

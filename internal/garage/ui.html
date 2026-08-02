@@ -112,6 +112,15 @@
   .prog { color: var(--dim); display: flex; align-items: center; gap: 8px; min-width: 0; }
   .prog .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pick { padding: 2px 8px; font-size: 11px; text-transform: none; letter-spacing: 0; flex: none; }
+  .pick.on { border-color: var(--accent); color: var(--accent); }
+  /* The agent's command: a fleet slot that holds a process instead of a file. */
+  .prog .cmd {
+    flex: 1; min-width: 0; padding: 2px 6px; font: inherit; font-size: 12px;
+    color: var(--ink); background: #060c12;
+    border: 1px solid var(--line); border-radius: 3px;
+  }
+  .prog .cmd:focus { outline: none; border-color: var(--accent); }
+  .prog .down { color: var(--danger); font-size: 11px; flex: none; }
   /* A counter snaps to the accent when it moves and fades back on its own. */
   .num { text-align: right; font-variant-numeric: tabular-nums; transition: color .6s; }
   .num.bump { color: var(--accent); transition: none; }
@@ -264,8 +273,15 @@ const COUNTERS = ["alive", "kills", "losses", "shots", "salvage"];
 
 // The faction list is the battle's cast, and the user owns it: + adds one
 // (its colour IS its identity, same as on the battlefield), × removes it,
-// and each carries its own program — a file, plus the editor's working copy.
-function newFaction() { return { path: "", text: null, dirty: false }; }
+// and each carries its own pilot. A pilot is EITHER a Filo program — a file,
+// plus the editor's working copy — OR an external agent: a command the game
+// starts and flies the faction with over stdio JSONL (linefire's game/ipc.go).
+// Any language, any process, an LLM agent among them, in the same fleet list
+// and battling the same way. The two are exclusive by construction here
+// because the engine refuses a faction that has both.
+function newFaction() {
+  return { path: "", text: null, dirty: false, agent: false, command: "" };
+}
 const factions = [newFaction(), newFaction()];
 const MAXF = 8;
 
@@ -292,7 +308,11 @@ function setup() {
     factions: factions.length,
     ships: clamped("ships"),
     duration: Number($("duration").value),
-    programs: factions.map((f) => f.path),
+    // A faction has one pilot: the agent's command REPLACES the program
+    // rather than joining it — the engine refuses a faction holding both,
+    // and the garage should never build a battle it knows will be refused.
+    programs: factions.map((f) => (f.agent ? "" : f.path)),
+    commands: factions.map((f) => (f.agent ? f.command.trim() : "")),
     window: $("window").checked,
     sound: $("sound").checked,
   };
@@ -377,7 +397,11 @@ function buildRows() {
     row.innerHTML =
       `<span class="swatch" style="background:${PALETTE[(f - 1) % PALETTE.length]}"></span>
        <span class="prog"><span class="name"></span>
+         <input class="cmd" type="text" spellcheck="false" hidden
+                placeholder="python3 bot.py" title="a command the game starts and flies this faction with">
+         <span class="down" title="this faction's agent stopped flying it"></span>
          <button class="pick ch" type="button">choose</button>
+         <button class="pick ag" type="button" title="fly this faction from an external program">agent</button>
          <button class="pick edt" type="button">edit</button>
          <button class="pick rm" type="button" title="remove this faction">×</button></span>
        <span class="num" data-c="alive">0</span>
@@ -387,9 +411,13 @@ function buildRows() {
        <span class="num" data-c="salvage">0</span>
        <span class="bar"><i style="background:${PALETTE[(f - 1) % PALETTE.length]}"></i></span>`;
     row.querySelector(".ch").onclick = () => pick(f);
+    row.querySelector(".ag").onclick = () => toggleAgent(f - 1);
     row.querySelector(".edt").onclick = () => editFaction(f - 1);
     row.querySelector(".rm").onclick = () => removeFaction(f - 1);
     row.querySelector(".rm").hidden = factions.length <= 1;
+    // change, not input: a command is committed on Enter or on leaving the
+    // field, because every commit relaunches the battle.
+    row.querySelector(".cmd").onchange = (e) => setCommand(f - 1, e.target.value);
     $("fleets").append(row);
     rows.set(f, row);
   }
@@ -409,9 +437,45 @@ function removeFaction(i) {
   buildRows();
 }
 
+// toggleAgent switches a faction between its Filo program and an external
+// one. The program is kept, not discarded: a fleet flown by an agent today is
+// often the same fleet whose .filo is being written for tomorrow.
+function toggleAgent(i) {
+  const fac = factions[i];
+  fac.agent = !fac.agent;
+  paintPrograms();
+  if (fac.agent) rows.get(i + 1).querySelector(".cmd").focus();
+}
+
+function setCommand(i, value) {
+  const fac = factions[i];
+  const next = value.trim();
+  if (next === fac.command) return; // leaving the field unchanged orders nothing
+  fac.command = next;
+  paintPrograms();
+  // Same rule as choosing a program: the pilot is a LAUNCH setting, so a
+  // flying battle is relaunched rather than relabelled.
+  guard(async () => {
+    const st = await window.garage_status();
+    if (st.running) await window.garage_deploy(setup());
+  });
+}
+
 function paintPrograms() {
   for (const [f, row] of rows) {
     const fac = factions[f - 1];
+    const cmd = row.querySelector(".cmd");
+    cmd.hidden = !fac.agent;
+    row.querySelector(".ag").classList.toggle("on", fac.agent);
+    // Nothing to edit in an agent: its program lives in its own process.
+    row.querySelector(".edt").hidden = fac.agent;
+    row.querySelector(".ch").hidden = fac.agent;
+    row.querySelector(".name").hidden = fac.agent;
+    row.querySelector(".down").textContent = "";
+    if (fac.agent) {
+      if (cmd.value !== fac.command) cmd.value = fac.command;
+      continue;
+    }
     const name = fac.path ? fileName(fac.path) : (fac.text !== null ? "unsaved code" : "house brain");
     row.querySelector(".name").innerHTML =
       name + (fac.dirty ? ' <span class="dot">•</span>' : "");
@@ -437,6 +501,9 @@ function paintFleets(fleets) {
       writeCounter(row.querySelector(`[data-c=${c}]`), f[c]);
     }
     row.querySelector(".bar > i").style.width = `${(f.alive / strongest) * 100}%`;
+    // An agent that died hands its ships to the house brain, which looks
+    // exactly like an agent that chose to patrol. Say which it was.
+    row.querySelector(".down").textContent = f.down ? "agent " + f.down : "";
   }
 }
 

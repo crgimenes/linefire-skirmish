@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -29,15 +30,27 @@ type Setup struct {
 	Ships    int      `json:"ships"`
 	Duration int      `json:"duration"`
 	Programs []string `json:"programs"` // one .filo path per faction, "" = house brain
-	Window   bool     `json:"window"`   // an ordinary window instead of the desktop overlay
-	Sound    bool     `json:"sound"`    // play the battle's audio; OFF by default
+	// Commands is one external agent per faction, same indexing ("" = none):
+	// a command line the game starts and then flies that faction with, over
+	// the JSONL protocol in linefire's game/ipc.go. It is how a program in any
+	// language — an LLM agent among them — enters the same fleet list as a
+	// .filo file. A faction cannot have both; the engine refuses that at
+	// launch, and the UI never offers it.
+	Commands []string `json:"commands"`
+	Window   bool     `json:"window"` // an ordinary window instead of the desktop overlay
+	Sound    bool     `json:"sound"`  // play the battle's audio; OFF by default
 }
 
 // FleetBoard is one faction's live standing, as the garage understands it
 // from the event stream.
 type FleetBoard struct {
 	Faction int    `json:"faction"`
-	Program string `json:"program"` // the file flying it, or "house brain"
+	Program string `json:"program"` // the file flying it, the agent's command, or "house brain"
+	// Down is set when this faction's external agent stopped flying it: the
+	// ships carry on under the house brain, which looks exactly like an agent
+	// that decided to patrol. Saying so is the difference between a bug in
+	// their program and a bug in ours.
+	Down    string `json:"down"`
 	Alive   int    `json:"alive"`
 	Kills   int    `json:"kills"`
 	Losses  int    `json:"losses"`
@@ -71,22 +84,30 @@ type Garage struct {
 	// window can take the focus back that the game just took. Nil in tests.
 	reclaim func()
 
-	mu      sync.Mutex
-	cmd     *exec.Cmd
-	stdin   io.WriteCloser
-	setup   Setup
-	board   map[int]*FleetBoard
-	ships   map[int]int // ship id -> faction, so a kill can be credited to a fleet
-	mode    string
-	mapName string
-	seed    int64
-	battles int
-	outcome string
-	lastErr string
+	mu    sync.Mutex
+	cmd   *exec.Cmd
+	stdin io.WriteCloser
+	setup Setup
+	board map[int]*FleetBoard
+	ships map[int]int // ship id -> faction, so a kill can be credited to a fleet
+	// agentDown is per LAUNCH, not per battle: an agent that died stays dead
+	// for every restage the same process serves.
+	agentDown map[int]string
+	mode      string
+	mapName   string
+	seed      int64
+	battles   int
+	outcome   string
+	lastErr   string
 }
 
 func newGarage(gamePath string) *Garage {
-	return &Garage{gamePath: gamePath, board: map[int]*FleetBoard{}, ships: map[int]int{}}
+	return &Garage{
+		gamePath:  gamePath,
+		board:     map[int]*FleetBoard{},
+		ships:     map[int]int{},
+		agentDown: map[int]string{},
+	}
 }
 
 // Deploy launches a battle, or redeploys the flying one.
@@ -97,6 +118,9 @@ func newGarage(gamePath string) *Garage {
 // battlefield, the window. Changing those means relaunching, and pretending
 // otherwise would relabel the board while the old programs kept flying.
 func (g *Garage) Deploy(s Setup) error {
+	if err := validateSetup(s); err != nil {
+		return err
+	}
 	g.mu.Lock()
 	running := g.cmd != nil
 	old := g.setup
@@ -117,6 +141,27 @@ func (g *Garage) Deploy(s Setup) error {
 	return g.launch(s)
 }
 
+// validateSetup rejects a battle the garage would otherwise launch into a
+// process that dies on its own command line — where the only word of it is a
+// line on a terminal the user may not even have open.
+func validateSetup(s Setup) error {
+	for i, c := range s.Commands {
+		if c == "" {
+			continue
+		}
+		// The game's -ipc flag assigns commands to factions by splitting on
+		// commas, so a comma inside one silently hands its tail to the next
+		// faction. Refusing beats launching something the user did not write.
+		if strings.Contains(c, ",") {
+			return fmt.Errorf("faction %d: an agent command cannot contain a comma (commas separate the factions); put it in a script and call that", i+1)
+		}
+		if i < len(s.Programs) && s.Programs[i] != "" {
+			return fmt.Errorf("faction %d has both a program and an agent; pick one", i+1)
+		}
+	}
+	return nil
+}
+
 // needsRelaunch reports whether the change touches the game process's launch
 // flags rather than the running match.
 func needsRelaunch(old, next Setup) bool {
@@ -126,7 +171,10 @@ func needsRelaunch(old, next Setup) bool {
 	if old.Sound != next.Sound {
 		return true // -sound is a LAUNCH flag: the running process cannot grow ears
 	}
-	return joinPrograms(old.Programs) != joinPrograms(next.Programs)
+	if joinSlots(old.Commands) != joinSlots(next.Commands) {
+		return true // the agents are CHILD PROCESSES of the game: they start with it
+	}
+	return joinSlots(old.Programs) != joinSlots(next.Programs)
 }
 
 // awaitStopped waits briefly for the killed process to be reaped, so the new
@@ -158,8 +206,11 @@ func launchArgs(s Setup) []string {
 	if s.Duration > 0 {
 		args = append(args, "-duration", strconv.Itoa(s.Duration))
 	}
-	if ai := joinPrograms(s.Programs); ai != "" {
+	if ai := joinSlots(s.Programs); ai != "" {
 		args = append(args, "-ai", ai)
+	}
+	if ipc := joinSlots(s.Commands); ipc != "" {
+		args = append(args, "-ipc", ipc)
 	}
 	if s.Window {
 		args = append(args, "-window")
@@ -196,6 +247,7 @@ func (g *Garage) launch(s Setup) error {
 	g.cmd, g.stdin = cmd, stdin
 	g.battles, g.outcome, g.lastErr = 0, "", ""
 	g.board, g.ships = map[int]*FleetBoard{}, map[int]int{}
+	g.agentDown = map[int]string{} // fresh process, fresh agents
 	g.mu.Unlock()
 
 	go g.readEvents(stdout)
@@ -268,6 +320,10 @@ func (g *Garage) Status() Status {
 		if f-1 < len(g.setup.Programs) && g.setup.Programs[f-1] != "" {
 			row.Program = baseName(g.setup.Programs[f-1])
 		}
+		if f-1 < len(g.setup.Commands) && g.setup.Commands[f-1] != "" {
+			row.Program = g.setup.Commands[f-1]
+			row.Down = g.agentDown[f]
+		}
 		st.Fleets = append(st.Fleets, row)
 	}
 	return st
@@ -286,6 +342,7 @@ type event struct {
 	Seed    int64  `json:"seed"`
 	Winner  int    `json:"winner"`
 	Ticks   int    `json:"ticks"`
+	Why     string `json:"why"` // "driver": how the faction's agent stopped flying it
 }
 
 // readEvents folds the battle stream into the board until the game exits.
@@ -358,6 +415,12 @@ func (g *Garage) apply(ev event) {
 		if b := fleet(g.ships[ev.By]); b != nil {
 			b.Kills++
 		}
+	case "driver":
+		// The agent stopped flying its faction. This one does NOT belong to
+		// the per-battle board: the fleet keeps flying the house brain across
+		// every restage that follows, so the notice has to outlive the board
+		// reset that a new battle performs.
+		g.agentDown[ev.Faction] = ev.Why
 	case "result":
 		g.outcome = fmt.Sprintf("faction %d prevails after %.1fs", ev.Winner, float64(ev.Ticks)/60)
 		if ev.Winner == 0 {
@@ -380,9 +443,11 @@ func (g *Garage) reap(cmd *exec.Cmd) {
 	}
 }
 
-// joinPrograms builds the -ai flag: comma-separated paths in faction order,
-// empty when no faction has a program.
-func joinPrograms(progs []string) string {
+// joinSlots builds a per-faction flag (-ai, -ipc): comma-separated values in
+// faction order, empty when no faction filled a slot. The empty slots have to
+// survive the join — they are what keeps faction 2's program from becoming
+// faction 1's.
+func joinSlots(progs []string) string {
 	out, any := "", false
 	for i, p := range progs {
 		if i > 0 {

@@ -2,6 +2,7 @@ package garage
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -85,11 +86,14 @@ func TestRelaunchOnlyForProcessSettings(t *testing.T) {
 		}
 	}
 
-	proc := []Setup{base, base, base, base}
+	proc := []Setup{base, base, base, base, base}
 	proc[0].Factions = 3
 	proc[1].Map = "maze"
 	proc[2].Window = true
 	proc[3].Programs = []string{"a.filo", "b.filo"}
+	// An agent is a CHILD PROCESS of the game: it is started with the battle,
+	// so swapping one in is a relaunch, not a match command.
+	proc[4].Commands = []string{"", "python3 bot.py"}
 	for _, s := range proc {
 		if !needsRelaunch(base, s) {
 			t.Errorf("%+v is a launch flag: it needs a relaunch", s)
@@ -97,16 +101,103 @@ func TestRelaunchOnlyForProcessSettings(t *testing.T) {
 	}
 }
 
+// A faction flown by an external agent reaches the game as -ipc, in the same
+// faction order as -ai and alongside it: one fleet list, two kinds of pilot.
+func TestAgentCommandsReachTheGameInFactionOrder(t *testing.T) {
+	s := Setup{Mode: "lastfleet", Map: "arena", Factions: 3,
+		Programs: []string{"a.filo", "", ""},
+		Commands: []string{"", "python3 bot.py", ""}}
+	args := launchArgs(s)
+
+	find := func(flag string) string {
+		for i, a := range args {
+			if a == flag && i+1 < len(args) {
+				return args[i+1]
+			}
+		}
+		return ""
+	}
+	if got := find("-ipc"); got != ",python3 bot.py," {
+		t.Fatalf("the agent must land in faction 2's slot, got %q from %v", got, args)
+	}
+	if got := find("-ai"); got != "a.filo,," {
+		t.Fatalf("the Filo program must keep its own slot, got %q", got)
+	}
+
+	// No agents at all means no flag: an empty -ipc would start a driverless
+	// battle differently for no reason.
+	plain := s
+	plain.Commands = []string{"", "", ""}
+	for _, a := range launchArgs(plain) {
+		if a == "-ipc" {
+			t.Fatalf("a fleet list with no agents must not pass -ipc: %v", launchArgs(plain))
+		}
+	}
+}
+
+// Two ways a setup would launch a process that dies on its own command line,
+// where the only word of it is a line on a terminal nobody is watching.
+func TestTheGarageRefusesASetupTheGameCannotFly(t *testing.T) {
+	g := newGarage("linefire-skirmish")
+
+	comma := Setup{Mode: "endless", Map: "arena", Factions: 2,
+		Commands: []string{"python3 -c import x, y", ""}}
+	err := g.Deploy(comma)
+	if err == nil {
+		t.Fatal("a comma in an agent command silently hands its tail to the next faction")
+	}
+	if !strings.Contains(err.Error(), "comma") {
+		t.Fatalf("the message must name the comma, got %v", err)
+	}
+
+	both := Setup{Mode: "endless", Map: "arena", Factions: 2,
+		Programs: []string{"a.filo", ""},
+		Commands: []string{"python3 bot.py", ""}}
+	if err := g.Deploy(both); err == nil {
+		t.Fatal("a faction cannot be flown by a program AND an agent; the engine refuses it at launch")
+	}
+
+	if g.pid() != 0 {
+		t.Fatal("a refused setup must not have started anything")
+	}
+}
+
+// An agent that dies hands its faction to the house brain — which looks
+// exactly like an agent that decided to patrol. The board has to say so, and
+// keep saying it: the fleet flies the house brain for every restage that
+// follows, so the notice must outlive the board reset a new battle performs.
+func TestADeadAgentIsReportedOnTheBoardAndSurvivesTheNextBattle(t *testing.T) {
+	g := newGarage("linefire-skirmish")
+	g.setup = Setup{Factions: 2, Commands: []string{"", "python3 bot.py"}}
+
+	g.apply(event{Ev: "driver", Faction: 2, Why: "closed its stream"})
+	fleet := func(f int) FleetBoard { return g.Status().Fleets[f-1] }
+	if got := fleet(2).Down; got != "closed its stream" {
+		t.Fatalf("faction 2's agent died and the board says %q", got)
+	}
+	if got := fleet(2).Program; got != "python3 bot.py" {
+		t.Fatalf("the row must still name the agent that was meant to fly it, got %q", got)
+	}
+	if fleet(1).Down != "" {
+		t.Fatal("faction 1 has no agent: nothing of its own to report")
+	}
+
+	g.apply(event{Ev: "battle", Mode: "endless"})
+	if fleet(2).Down == "" {
+		t.Fatal("a new battle cleared the notice, but the agent is still dead")
+	}
+}
+
 // The -ai flag is only built when some faction actually has a program, and it
 // keeps faction order (an empty slot is a real position, not a gap).
 func TestProgramFlagKeepsFactionOrder(t *testing.T) {
-	if got := joinPrograms([]string{"", ""}); got != "" {
+	if got := joinSlots([]string{"", ""}); got != "" {
 		t.Errorf("no programs should mean no flag, got %q", got)
 	}
-	if got := joinPrograms([]string{"", "b.filo"}); got != ",b.filo" {
+	if got := joinSlots([]string{"", "b.filo"}); got != ",b.filo" {
 		t.Errorf("faction 2's program must stay in slot 2, got %q", got)
 	}
-	if got := joinPrograms([]string{"a.filo", "", "c.filo"}); got != "a.filo,,c.filo" {
+	if got := joinSlots([]string{"a.filo", "", "c.filo"}); got != "a.filo,,c.filo" {
 		t.Errorf("faction order broken: %q", got)
 	}
 }

@@ -120,6 +120,28 @@ func garageKeyScenario() string {
 func driveGarage(w glaze.WebView, coords chan [2]float64) {
 	// The page, the faction list, and the editor bundle all load first.
 	time.Sleep(1500 * time.Millisecond)
+
+	// The agent affordance, on the real page: a faction switched to an agent
+	// sends its command as commands[0] and gives up its program slot, because
+	// the engine refuses a faction holding both. This is the JS wiring of the
+	// fleet list — a typo here reaches the user as a battle that will not
+	// launch, with the reason on a terminal they do not have open.
+	w.Eval(`(function () {
+		toggleAgent(0);
+		var cmd = rows.get(1).querySelector('.cmd');
+		cmd.value = 'python3 bot.py';
+		cmd.dispatchEvent(new Event('change'));
+		var s = setup();
+		window.__agent = [
+			'cmd0=' + s.commands[0],
+			'prog0=' + s.programs[0],
+			'cmdShown=' + !cmd.hidden,
+			'editHidden=' + rows.get(1).querySelector('.edt').hidden,
+			'cmd1=' + s.commands[1],
+		].join(' ');
+		toggleAgent(0);   // back to a program: the rest of the run is the editor
+	})()`)
+	time.Sleep(300 * time.Millisecond)
 	w.Eval(`(function () {
 		var r = document.getElementById('tab-editor').getBoundingClientRect();
 		coords(r.left + r.width / 2, innerHeight - (r.top + r.height / 2));
@@ -149,6 +171,7 @@ func driveGarage(w glaze.WebView, coords chan [2]float64) {
 		'end=' + ed.ta.value.length,
 		'focus=' + document.hasFocus(),
 		'active=' + (document.activeElement === ed.ta),
+		window.__agent,
 	].join(' '))`)
 }
 
@@ -165,5 +188,20 @@ func TestArrowDownMovesTheCaretInTheRealGarage(t *testing.T) {
 	if !strings.Contains(got, "sel0=0 ") || strings.Contains(got, " sel=0 ") ||
 		strings.HasPrefix(got, "run:") || got == "no report" {
 		t.Fatalf("opening the editor and pressing ArrowDown did not move the caret: %s", got)
+	}
+
+	// The same run carries the fleet list's agent affordance, since a second
+	// GUI scenario would cost another window and another launch.
+	want := []string{
+		"cmd0=python3 bot.py", // the typed command reaches the setup
+		"prog0=",              // and takes the faction's whole pilot slot
+		"cmdShown=true",       // the field is visible while the faction is an agent
+		"editHidden=true",     // there is nothing here to edit: it lives in its own process
+		"cmd1=",               // the other faction is untouched
+	}
+	for _, w := range want {
+		if !strings.Contains(got, w) {
+			t.Errorf("the agent row did not report %q: %s", w, got)
+		}
 	}
 }
