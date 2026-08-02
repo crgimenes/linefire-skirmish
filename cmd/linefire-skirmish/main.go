@@ -1,4 +1,15 @@
-// Command linefire-skirmish runs Linefire's faction battle over the desktop:
+// Command linefire-skirmish is the whole product in ONE executable: run it with
+// no arguments and it opens the GARAGE — the window where battles are
+// configured and watched — and the garage launches battles by re-running this
+// same file with -control. There is no second binary to ship, to find beside
+// this one, or to look up on the PATH; installing is copying one file, which is
+// what every store and every channel wants.
+//
+// -play (and any of the flags below) skips the garage and goes straight to the
+// battle. That is the front door for a terminal; the garage is the front door
+// for everyone else.
+//
+// The battle itself is Linefire's faction fight over the desktop:
 // two or more teams of autonomous ships — each in its own color, materialising
 // through its own vortex — hunting each other in a procedurally generated arena
 // that regenerates every twenty seconds or so, drawn on a transparent,
@@ -12,7 +23,8 @@
 //
 // Usage:
 //
-//	linefire-skirmish              the battle, silent, over the desktop
+//	linefire-skirmish              the GARAGE: configure and watch battles
+//	linefire-skirmish -play        the battle, silent, over the desktop
 //	linefire-skirmish -factions 3  three teams instead of two (up to 8)
 //	linefire-skirmish -map maze    fight in a cave labyrinth instead of the open
 //	linefire-skirmish -mode lastfleet   a real match: fleets land, no
@@ -62,6 +74,7 @@ import (
 	"syscall"
 
 	"github.com/crgimenes/linefire"
+	"github.com/crgimenes/linefire-skirmish/internal/garage"
 	"github.com/crgimenes/linefire/game"
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -276,10 +289,26 @@ func main() {
 	trace := flag.String("trace", "", "with -sim: record every battle as JSONL to this file and run the invariant checker")
 	check := flag.String("check", "", "run the invariant checker over a saved trace file and exit")
 	control := flag.Bool("control", false, "the garage protocol: battle events as JSONL on stdout, match commands as JSONL on stdin")
+	_ = flag.Bool("play", false, "skip the garage and go straight to the battle")
+	garageFlag := flag.Bool("garage", false, "open the garage (the default when there are no arguments)")
+	gameBin := flag.String("game", "", "with the garage: the executable to launch battles with (default: this one)")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println("linefire-skirmish", version)
+		return
+	}
+
+	// No arguments at all is the front door: the garage. Any argument means the
+	// caller knows what they want and gets the battle — which is why -play needs
+	// no code of its own: being present is the whole of what it does. -garage
+	// exists for the garage WITH options. The child the garage launches carries
+	// -control, so it can never land here and open a second garage.
+	if len(os.Args) == 1 || *garageFlag {
+		err := garage.Run(garage.Options{Game: *gameBin, Debug: *debug})
+		if err != nil {
+			log.Fatalf("linefire-skirmish: %v", err)
+		}
 		return
 	}
 

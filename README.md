@@ -13,26 +13,33 @@ code, art and data come from the linefire module, so what appears over the
 desktop is pixel for pixel the game. This repository is the shell — the window,
 the garage and the command line around it.
 
+Everything below is **one executable**. Installing it is copying one file:
+there is nothing beside it to find and no assets to ship along. Run it with no
+arguments and you get the garage; any flag goes straight to the battle.
+
 ## The garage
 
 The workshop, in a real window, for everyone who will never open a terminal:
 choose the mode, hand each fleet its program, deploy, and watch the scoreboard.
 
 ```bash
-go run ./cmd/skirmish-garage
+go run ./cmd/linefire-skirmish
 ```
 
-It launches the battle in its own process and talks to it over the control
-protocol, so a battle can be reconfigured or restaged without closing anything.
+It launches the battle in its own process — the same executable, re-run with
+`-control` — and talks to it over the control protocol, so a battle can be
+reconfigured or restaged without closing anything.
 
 ## The battle
 
 ```bash
-go run ./cmd/linefire-skirmish
+go run ./cmd/linefire-skirmish -play
 ```
 
 | Flag | What it does |
 | --- | --- |
+| `-play` | go straight to the battle (what "no flags" used to mean) |
+| `-garage` | open the garage explicitly, e.g. to pass it `-game` |
 | `-mode` | `endless` (the aquarium, default), `lastfleet` (annihilation) or `timed` |
 | `-ships` | fleet size per faction in a real match (default 8) |
 | `-duration` | deadline in seconds for `timed` (default 120) |

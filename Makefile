@@ -1,14 +1,17 @@
-# linefire-skirmish — the programming game (game overlay + garage), CLIs under cmd/
+# linefire-skirmish — the programming game, in ONE executable: no arguments
+# opens the garage, any flag goes straight to the battle, and the garage
+# launches battles by re-running the same file with -control.
 #
 # Targets:
-#   make build       — build every cmd/<name> for the current OS/arch into bin/
+#   make build       — build the binary for the current OS/arch into bin/
 #   make build-cross — also build for linux/amd64 and windows/amd64
 #   make release     — stamped standalone binaries for the desktop matrix
-#   make run         — the desktop overlay (the aquarium)
+#   make run         — the desktop overlay (the aquarium), i.e. -play
 #   make run-window  — the same battle in an ordinary window (what you want while working)
 #   make run-ai      — a windowed match with ai/hunter.filo flying faction 1
 #   make run-maze    — the same, in a labyrinth
 #   make garage      — the garage: configure and watch battles from a real window
+#                      (the same as running the binary with no arguments)
 #   make sim         — SIM=40 headless battles, scoreboard only
 #   make trace       — SIM=40 headless battles + trace + the invariant checker
 #   make check       — go fix + go fix -inline + go vet + gofmt + go test
@@ -77,7 +80,7 @@ release:
 	done
 
 run:
-	go run $(RUN_FLAGS) ./cmd/linefire-skirmish
+	go run $(RUN_FLAGS) ./cmd/linefire-skirmish -play
 
 # -window is the one you want while working: the overlay covers the desktop.
 run-window:
@@ -92,7 +95,7 @@ run-maze:
 	  -factions $(FACTIONS) -ships $(SHIPS) -ai $(AI)
 
 garage:
-	go run $(RUN_FLAGS) ./cmd/skirmish-garage
+	go run $(RUN_FLAGS) ./cmd/linefire-skirmish
 
 sim:
 	go run $(RUN_FLAGS) ./cmd/linefire-skirmish -sim $(SIM) -map $(MAP) \
@@ -128,7 +131,7 @@ live:
 	@mkdir -p bin
 	go build $(BUILD_FLAGS) -o bin/linefire-skirmish-$(GOOS)-$(GOARCH) ./cmd/linefire-skirmish
 	SKIRMISH_GAME=$$PWD/bin/linefire-skirmish-$(GOOS)-$(GOARCH) \
-	  go test -timeout 120s -count 1 -run Live ./cmd/skirmish-garage/
+	  go test -timeout 120s -count 1 -run Live ./internal/garage/
 
 qa: check security build-cross
 

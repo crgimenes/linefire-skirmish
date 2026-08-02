@@ -1,4 +1,4 @@
-package main
+package garage
 
 import (
 	"os"
@@ -12,7 +12,11 @@ import (
 // at one — absent, it skips rather than fails.
 //
 //	go build -o /tmp/linefire-skirmish ./cmd/linefire-skirmish
-//	SKIRMISH_GAME=/tmp/linefire-skirmish go test ./cmd/skirmish-garage/ -run Live -v
+//	SKIRMISH_GAME=/tmp/linefire-skirmish go test ./internal/garage/ -run Live -v
+//
+// The garage normally launches THIS executable (one binary, two front doors),
+// but a test binary is not the game — so the live test points it at a real
+// build, which is what Options.Game exists for.
 func TestLiveBattleFillsTheBoard(t *testing.T) {
 	bin := os.Getenv("SKIRMISH_GAME")
 	if bin == "" {
