@@ -19,6 +19,14 @@ import (
 // A failure here is reported and swallowed on purpose. A garage without a menu
 // bar is a garage with awkward text fields; a garage that refuses to open
 // because a menu would not build is worse.
+//
+// NO Options.Dispatch, and that is not an oversight. Set with a dispatcher
+// marshals the AppKit work onto it and BLOCKS until it runs — but glaze's
+// Dispatch queues onto the main queue, which nothing drains until Run starts
+// the run loop. Passing the obvious-looking w.Dispatch from here, before Run,
+// hangs the process forever with an empty screen and no error: shipped exactly
+// that and crg had to Ctrl+C it. Called from the UI thread, as it is here, the
+// dispatcher must be nil.
 func installMenu(w glaze.WebView, quit func()) (*menu.Menu, error) {
 	return menu.Set([]menu.Item{
 		{
@@ -39,5 +47,5 @@ func installMenu(w glaze.WebView, quit func()) (*menu.Menu, error) {
 				{Title: "Select All", Shortcut: "cmd+a", Selector: "selectAll:"},
 			},
 		},
-	}, menu.Options{Window: w.Window(), Dispatch: w.Dispatch})
+	}, menu.Options{Window: w.Window()})
 }
