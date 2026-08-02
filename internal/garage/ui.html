@@ -446,6 +446,7 @@ async function poll() {
   try {
     const st = await window.garage_status();
     launching = !!st.launching;
+    running = !!st.running;
     $("state").textContent = st.launching
       ? "launching…"
       : st.running ? `${st.mode} · ${st.mapName || "…"} · battle ${st.battles}` : "no battle";
@@ -468,8 +469,20 @@ async function poll() {
 }
 
 buildRows();
-setInterval(poll, 120);
-poll();
+// The poll is a bridge round-trip four times a second. It is worth that while
+// a battle is flying and the board is moving; it is pure interference while
+// somebody is typing in the editor with nothing deployed, where it competes
+// with the keystroke for the same thread. So: fast when there is a battle,
+// idle when the editor is open and there is none.
+let running = false;
+function pollDelay() {
+  if (launching) return 120;
+  if (!$("view-editor").hidden && !running) return 1000;
+  return 120;
+}
+(function loop() {
+  poll().finally(() => setTimeout(loop, pollDelay()));
+})();
 
 // ---- the editor room ------------------------------------------------------
 
