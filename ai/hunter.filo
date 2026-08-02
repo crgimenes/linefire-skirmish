@@ -59,14 +59,19 @@
         (do
           ; Aim first. bearing gives the angle from us to them, in degrees.
           (face (bearing self-x self-y tx ty))
-          ; Too far: close in with seek — it rides the engine's pathfinding,
-          ; so rock is walked around, not pressed into. Close enough: strafe
-          ; sideways with move (the perpendicular of the direction to the
-          ; target), which makes us harder to hit. One navigation order per
-          ; tick: the last of (seek)/(move) wins.
+          ; Too far: close in. Close enough: strafe sideways — the
+          ; perpendicular of the direction to the target — which makes us
+          ; harder to hit. BOTH use seek, and the strafe learned that the hard
+          ; way: it used to be a (move), and (move) is the blind primitive.
+          ; It pushes a direction and nothing else, so a hull strafing into
+          ; rock stands perfectly still, shooting, until something kills it —
+          ; measured in a maze, a ship frozen for five seconds with four of
+          ; eight directions walled. seek rides the engine's pathfinding and
+          ; goes AROUND. Use (move) when you know the way is open, and expect a
+          ; maze to punish it. One navigation order per tick: the last wins.
           (if (> d 240)
               (seek tx ty)
-              (move (- self-y ty) (- tx self-x)))
+              (seek (+ self-x (- self-y ty)) (+ self-y (- tx self-x))))
           ; fire returns #t only when the shot actually leaves: the cooldown
           ; belongs to the engine, so spamming it is free and useless.
           ;
