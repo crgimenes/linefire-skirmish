@@ -43,7 +43,11 @@
   button:hover:not(:disabled) { background: #1e3844; }
   button:disabled { opacity: .4; cursor: default; }
   button.go { border-color: var(--accent); color: var(--accent); }
+  /* The row fills the panel and never escapes it: the buttons share the width
+     in proportion to their labels (a wider word gets more room) and shrink
+     together when the longest state — Redeploy — is showing. */
   .actions { display: flex; gap: 8px; margin-top: 4px; }
+  .actions button { flex: 1 1 auto; min-width: 0; padding: 8px 4px; letter-spacing: .5px; }
   table { width: 100%; border-collapse: collapse; }
   th {
     text-align: left; font-weight: normal; color: var(--dim);
@@ -208,7 +212,7 @@ async function poll() {
       ? `${st.mode} · ${st.mapName || "…"} · battle ${st.battles}`
       : "no battle";
     $("state").className = st.running ? "state live" : "state";
-    $("deploy").textContent = st.running ? "Reconfigure" : "Deploy";
+    $("deploy").textContent = st.running ? "Redeploy" : "Deploy";
     $("restage").disabled = !st.running;
     $("cease").disabled = !st.running;
     renderFleets(st.fleets || []);
