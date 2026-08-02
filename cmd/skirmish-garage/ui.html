@@ -87,7 +87,7 @@
      who is winning reads before any number does. */
   .fleet {
     display: grid; gap: 4px 12px; padding: 10px 0;
-    grid-template-columns: auto minmax(0, 1fr) repeat(4, minmax(44px, auto));
+    grid-template-columns: auto minmax(0, 1fr) repeat(5, minmax(42px, auto));
     align-items: center; border-bottom: 1px solid #12202a;
   }
   .fleet:last-child { border-bottom: 0; }
@@ -187,7 +187,7 @@
     <h2>Fleets</h2>
     <div class="fleet heads">
       <span>Faction</span><span class="num">Alive</span><span class="num">Kills</span>
-      <span class="num">Losses</span><span class="num">Shots</span>
+      <span class="num">Losses</span><span class="num">Shots</span><span class="num">Salvage</span>
     </div>
     <div id="fleets"></div>
     <div id="outcome" class="outcome"></div>
@@ -200,7 +200,7 @@
 // FACTION here exactly as it does on the battlefield.
 const PALETTE = ["#ff5555", "#55ffff", "#55ff55", "#ff55ff",
                  "#ffff55", "#5555ff", "#ffffff", "#555555"];
-const COUNTERS = ["alive", "kills", "losses", "shots"];
+const COUNTERS = ["alive", "kills", "losses", "shots", "salvage"];
 
 // programs[i] is faction i+1's .filo file; "" leaves it on the house brain.
 const programs = ["", "", "", "", "", "", "", ""];
@@ -309,6 +309,7 @@ function buildRows(count) {
        <span class="num" data-c="kills">0</span>
        <span class="num" data-c="losses">0</span>
        <span class="num" data-c="shots">0</span>
+       <span class="num" data-c="salvage">0</span>
        <span class="bar"><i style="background:${PALETTE[(f - 1) % PALETTE.length]}"></i></span>`;
     row.querySelector(".pick").onclick = () => pick(f);
     $("fleets").append(row);

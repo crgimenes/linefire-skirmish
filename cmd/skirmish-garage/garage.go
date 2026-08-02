@@ -41,6 +41,7 @@ type FleetBoard struct {
 	Kills   int    `json:"kills"`
 	Losses  int    `json:"losses"`
 	Shots   int    `json:"shots"`
+	Salvage int    `json:"salvage"`
 }
 
 // Status is the whole garage state the UI renders each poll.
@@ -289,6 +290,10 @@ func (g *Garage) apply(ev event) {
 		g.ships[ev.ID] = ev.Faction // the roll: a kill names its shooter by SHIP
 		if b := fleet(ev.Faction); b != nil {
 			b.Alive++
+		}
+	case "salvage":
+		if b := fleet(ev.Faction); b != nil {
+			b.Salvage++
 		}
 	case "shot":
 		if b := fleet(ev.Faction); b != nil {

@@ -13,10 +13,22 @@
 (if first-tick (def waypoint (floor (/ self-x 500))))
 
 ; The instruments are plain globals, refreshed every tick: self-x self-y
-; self-heading self-hull self-speed self-radar fire-ready field-w field-h,
-; and the sensor lists. "enemies" holds only what this ship can SEE — inside
-; its radar and not behind rock — nearest first. Each contact is a list:
+; self-heading self-hull self-hull-max self-shield self-speed self-radar
+; fire-ready field-w field-h, and the sensor lists. "enemies" holds only what
+; this ship can SEE — inside its radar and not behind rock — nearest first.
+; Each contact is a list:
 ;   (kind x y heading dist)
+; and "loot" is the pickups in sight, one field shorter (a canister has no
+; heading to report):
+;   (kind x y dist)
+
+; A wounded hull breaks off for the nearest canister. Flying over one salvages
+; it, so wanting it is the whole of taking it — and the enemy program can see
+; the same canister, which is what makes the field worth contesting.
+(if (and (not (is-empty loot))
+         (< self-hull (- self-hull-max 1)))
+    (let ((can (head loot)))
+      (seek (nth can 1) (nth can 2)))
 
 (if (is-empty enemies)
     ; Nobody in sight: patrol the field's corners with seek, which rides the
@@ -48,4 +60,4 @@
               (move (- self-y ty) (- tx self-x)))
           ; fire returns #t only when the shot actually leaves: the cooldown
           ; belongs to the engine, so spamming it is free and useless.
-          (fire tx ty)))))
+          (fire tx ty))))))
