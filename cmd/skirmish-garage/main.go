@@ -92,7 +92,13 @@ func main() {
 		log.Fatalf("skirmish-garage: %v", err)
 	}
 
-	w, err := glaze.New(*debug)
+	// The garage LOSES focus every time it deploys: launching the game activates
+	// the game's window (which it must — an unactivated window is throttled to
+	// single-digit FPS on macOS). Without this the next click on the garage is
+	// spent bringing it forward and never reaches the button, so ordering two
+	// things in a row needs a double click and the panel feels dead. Nothing
+	// here destroys anything, which is exactly when this is safe to turn on.
+	w, err := glaze.NewWithOptions(glaze.Options{Debug: *debug, AcceptsFirstMouse: true})
 	if err != nil {
 		log.Fatalf("skirmish-garage: %v", err)
 	}
