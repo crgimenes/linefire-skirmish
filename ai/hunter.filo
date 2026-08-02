@@ -60,4 +60,14 @@
               (move (- self-y ty) (- tx self-x)))
           ; fire returns #t only when the shot actually leaves: the cooldown
           ; belongs to the engine, so spamming it is free and useless.
-          (fire tx ty))))))
+          ;
+          ; Except with the devourer. Salvaging is automatic — flying over a
+          ; canister takes it, so the wounded-hull rule above can hand this
+          ; ship a black hole it never asked for. A dropped weapon ignores
+          ; (fire)'s point and lands at OUR feet, and this one drags in every
+          ; hull nearby whatever colour it flies. So hold it while a wingman
+          ; is in sight, and spring it only when we are alone with the enemy.
+          ; (A sharper program would read "loot" and never fly over the
+          ; canister in the first place — that one is yours to write.)
+          (if (or (not (= self-weapon "devourer")) (is-empty allies))
+              (fire tx ty)))))))

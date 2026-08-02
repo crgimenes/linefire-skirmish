@@ -65,6 +65,20 @@ and not behind rock) — and answers with orders: `(seek x y)` to navigate aroun
 walls, `(move dx dy)` to steer, `(face deg)` to aim, `(fire x y)` to shoot.
 Physics stays the engine's: a program pilots a ship, it does not teleport one.
 
+The battle leaves things on the field, and a hull salvages what it flies over:
+repairs, shields, combat mods, and weapons. Programs see them too — `loot`
+lists the pickups in sight under the same radar-and-line-of-sight rules as
+ships — so a canister is something two fleets can race for, which is where
+strategy starts.
+
+Weapons change what `(fire)` means, and `self-weapon` says which one you are
+holding. The missile explodes and its blast hurts your own fleet; the laser
+burns everything on the firing line; the mine is *laid* where you stand and
+waits for anybody but your fleet; the devourer is dropped at your own feet and
+drags in every hull nearby, yours included. Salvaging is automatic, so a
+wounded ship diving for a repair can come up carrying a black hole — reading
+`self-weapon` before you shoot is a real decision, not a formality.
+
 A program that errors is reported once and its ship falls back to the built-in
 brain for that tick — a crash makes a dumb ship, never a dead one.
 
