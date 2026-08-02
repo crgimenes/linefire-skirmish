@@ -144,14 +144,32 @@
         <option value="maze">Labyrinth</option>
       </select>
     </label>
+    <!-- Discrete choices are dropdowns: a faction count and a deadline have a
+         handful of sensible values, and a field that cannot be given a
+         nonsensical number never has to reject one. -->
     <label>Factions
-      <input id="factions" type="number" min="2" max="8" value="2">
+      <select id="factions">
+        <option value="1">1 — solo practice</option>
+        <option value="2" selected>2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+        <option value="8">8 — the whole palette</option>
+      </select>
     </label>
     <label id="shipsLabel">Ships per fleet
-      <input id="ships" type="number" min="1" max="20" value="8">
+      <input id="ships" type="number" min="1" max="60" step="1" value="8">
     </label>
-    <label id="durationLabel">Deadline (seconds)
-      <input id="duration" type="number" min="10" max="900" value="120">
+    <label id="durationLabel">Deadline
+      <select id="duration">
+        <option value="30">30 seconds</option>
+        <option value="60">1 minute</option>
+        <option value="120" selected>2 minutes</option>
+        <option value="300">5 minutes</option>
+        <option value="600">10 minutes</option>
+      </select>
     </label>
     <div class="check">
       <input id="window" type="checkbox">
@@ -189,13 +207,27 @@ const programs = ["", "", "", "", "", "", "", ""];
 
 const $ = (id) => document.getElementById(id);
 
+// A typed number is only advisory until it is clamped: min/max on the element
+// stop the spinner, not the keyboard, and an absurd fleet is a battle nobody
+// asked for.
+function clamped(id) {
+  const el = $(id);
+  const lo = Number(el.min), hi = Number(el.max);
+  let v = Math.round(Number(el.value));
+  if (!Number.isFinite(v)) v = lo;
+  v = Math.min(Math.max(v, lo), hi);
+  if (String(v) !== el.value) el.value = v;
+  return v;
+}
+$("ships").onchange = () => clamped("ships");
+
 function setup() {
   const factions = Number($("factions").value);
   return {
     mode: $("mode").value,
     map: $("map").value,
     factions: factions,
-    ships: Number($("ships").value),
+    ships: clamped("ships"),
     duration: Number($("duration").value),
     programs: programs.slice(0, factions),
     window: $("window").checked,
@@ -337,7 +369,7 @@ async function poll() {
 }
 
 // Before the first poll answers, show the fleets the form is configured for.
-$("factions").oninput = () => buildRows(Number($("factions").value));
+$("factions").onchange = () => buildRows(Number($("factions").value));
 buildRows(2);
 setInterval(poll, 120);
 poll();

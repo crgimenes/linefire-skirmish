@@ -127,7 +127,10 @@ func runSim(n int, programs, labels []string, factions int, mapMode, tracePath s
 		totalTicks += res.Ticks
 	}
 
-	teams := max(factions, 2)
+	teams := factions
+	if teams <= 0 {
+		teams = 2
+	}
 	for f := 1; f <= teams; f++ {
 		label := "house brain"
 		if f-1 < len(labels) && labels[f-1] != "" {
@@ -262,7 +265,7 @@ func main() {
 	sound := flag.Bool("sound", false, "play the attract-mode audio (silent by default)")
 	debug := flag.Bool("debug", false, "start with the debug HUD up")
 	window := flag.Bool("window", false, "run in an ordinary window instead of over the desktop")
-	factions := flag.Int("factions", 2, "teams fighting in the arena (2-8)")
+	factions := flag.Int("factions", 2, "teams fighting in the arena, 1 (solo practice) to 8")
 	mapMode := flag.String("map", game.SkirmishMapArena, "battlefield: arena (open field) or maze (cave labyrinth)")
 	mode := flag.String("mode", game.MatchEndless, "match mode: endless (the aquarium), lastfleet (annihilation) or timed")
 	ships := flag.Int("ships", 0, "fleet size per faction in a real match (default 8)")
