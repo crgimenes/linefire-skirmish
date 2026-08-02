@@ -149,7 +149,6 @@ func driveGarage(w glaze.WebView, coords chan [2]float64) {
 		'end=' + ed.ta.value.length,
 		'focus=' + document.hasFocus(),
 		'active=' + (document.activeElement === ed.ta),
-		'caretHidden=' + ed.caret.hidden,
 	].join(' '))`)
 }
 

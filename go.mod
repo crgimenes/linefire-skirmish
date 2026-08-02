@@ -3,7 +3,7 @@ module github.com/crgimenes/linefire-skirmish
 go 1.26.5
 
 require (
-	github.com/crgimenes/glaze v0.0.43
+	github.com/crgimenes/glaze v0.0.44
 	github.com/crgimenes/linefire v0.0.45
 	github.com/ebitengine/purego v0.11.0-alpha.8
 	github.com/hajimehoshi/ebiten/v2 v2.10.0-alpha.13
