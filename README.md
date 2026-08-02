@@ -45,12 +45,21 @@ The garage has a real menu bar, and on macOS that is not decoration: a WebView
 has no route to the editing commands without one, so `Cmd+C` and `Cmd+V` would
 do nothing in every text field on the page.
 
+### Factions and their code
+
+The fleet list is the battle's cast: **+** adds a faction (its colour is its
+identity, exactly as on the battlefield), **×** removes it, and each row
+carries its program — *choose* an existing `.filo`, or *edit* to write one in
+place. Code against code is the point, and this is the short path to it: add
+two factions, edit both, deploy.
+
 ### The editor
 
-The garage's second room: a real code editor (line numbers, Filo syntax
-highlighting, autocompletion over the ship contract, `Cmd+S`) for writing
-fleet programs without leaving the game. **Validate** compiles with the
-battle's own engine and flies one dry tick — the failing line is marked in
+Each faction's *edit* opens the garage's second room on **that faction's
+program**: a real code editor (line numbers, Filo syntax highlighting,
+autocompletion over the ship contract, `Cmd+S`), one buffer per faction, with
+unsaved work marked with a dot on the fleet list. **Validate** compiles with
+the battle's own engine and flies one dry tick — the failing line is marked in
 place. **Quick test** fights 20 headless battles against the house brain and
 reports the score, in seconds, in-process. The component is
 [`glaze/editor`](https://github.com/crgimenes/glaze), shared with other tools.

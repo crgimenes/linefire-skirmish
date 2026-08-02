@@ -114,6 +114,11 @@
   .foot { margin-top: 14px; color: var(--dim); font-size: 11px;
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+  .fleethead { display: flex; justify-content: space-between; align-items: center; }
+  .fleethead .pick { font-size: 13px; line-height: 1; padding: 2px 9px; }
+  .prog .dot { color: var(--accent); }
+  .rm { color: var(--dim); }
+
   /* The garage's two rooms: the battle console and the program editor. */
   .tabs { display: flex; gap: 2px; }
   .tabs button {
@@ -177,21 +182,6 @@
         <option value="maze">Labyrinth</option>
       </select>
     </label>
-    <!-- Discrete choices are dropdowns: a faction count and a deadline have a
-         handful of sensible values, and a field that cannot be given a
-         nonsensical number never has to reject one. -->
-    <label>Factions
-      <select id="factions">
-        <option value="1">1 — solo practice</option>
-        <option value="2" selected>2</option>
-        <option value="3">3</option>
-        <option value="4">4</option>
-        <option value="5">5</option>
-        <option value="6">6</option>
-        <option value="7">7</option>
-        <option value="8">8 — the whole palette</option>
-      </select>
-    </label>
     <label id="shipsLabel">Ships per fleet
       <input id="ships" type="number" min="1" max="60" step="1" value="8">
     </label>
@@ -221,7 +211,8 @@
   </section>
 
   <section>
-    <h2>Fleets</h2>
+    <h2 class="fleethead"><span>Fleets</span>
+      <button id="addf" class="pick" title="add a faction (its colour is its name)">+</button></h2>
     <div class="fleet heads">
       <span>Faction</span><span class="num">Alive</span><span class="num">Kills</span>
       <span class="num">Losses</span><span class="num">Shots</span><span class="num">Salvage</span>
@@ -257,8 +248,12 @@ const PALETTE = ["#ff5555", "#55ffff", "#55ff55", "#ff55ff",
                  "#ffff55", "#5555ff", "#ffffff", "#555555"];
 const COUNTERS = ["alive", "kills", "losses", "shots", "salvage"];
 
-// programs[i] is faction i+1's .filo file; "" leaves it on the house brain.
-const programs = ["", "", "", "", "", "", "", ""];
+// The faction list is the battle's cast, and the user owns it: + adds one
+// (its colour IS its identity, same as on the battlefield), × removes it,
+// and each carries its own program — a file, plus the editor's working copy.
+function newFaction() { return { path: "", text: null, dirty: false }; }
+const factions = [newFaction(), newFaction()];
+const MAXF = 8;
 
 const $ = (id) => document.getElementById(id);
 
@@ -277,14 +272,13 @@ function clamped(id) {
 $("ships").onchange = () => clamped("ships");
 
 function setup() {
-  const factions = Number($("factions").value);
   return {
     mode: $("mode").value,
     map: $("map").value,
-    factions: factions,
+    factions: factions.length,
     ships: clamped("ships"),
     duration: Number($("duration").value),
-    programs: programs.slice(0, factions),
+    programs: factions.map((f) => f.path),
     window: $("window").checked,
     sound: $("sound").checked,
   };
@@ -311,7 +305,14 @@ async function guard(fn) {
   }
 }
 
-$("deploy").onclick = () => guard(() => window.garage_deploy(setup()));
+$("deploy").onclick = () => guard(async () => {
+  await window.garage_deploy(setup());
+  const dirty = factions.map((f, i) => (f.dirty ? i + 1 : 0)).filter(Boolean);
+  if (dirty.length) {
+    $("err").textContent = "faction " + dirty.join(", ") +
+      " has unsaved code — the battle flies the saved files; Cmd+S to use your edits";
+  }
+});
 $("restage").onclick = () => guard(() => window.garage_restage());
 $("cease").onclick = () => guard(() => window.garage_cease());
 
@@ -333,7 +334,10 @@ async function pick(faction) {
   await guard(async () => {
     const path = await window.pickProgram();
     if (!path) return;
-    programs[faction - 1] = path;
+    const fac = factions[faction - 1];
+    fac.path = path;
+    fac.text = null; // the editor reloads from the chosen file
+    fac.dirty = false;
     paintPrograms();
     const st = await window.garage_status();
     if (st.running) await window.garage_deploy(setup());
@@ -350,35 +354,54 @@ function fileName(p) {
 // button being replaced.
 const rows = new Map();
 
-function buildRows(count) {
-  if (rows.size === count) return;
+function buildRows() {
   rows.clear();
   $("fleets").textContent = "";
-  for (let f = 1; f <= count; f++) {
+  for (let f = 1; f <= factions.length; f++) {
     const row = document.createElement("div");
     row.className = "fleet";
     row.innerHTML =
       `<span class="swatch" style="background:${PALETTE[(f - 1) % PALETTE.length]}"></span>
        <span class="prog"><span class="name"></span>
-         <button class="pick" type="button">choose</button></span>
+         <button class="pick ch" type="button">choose</button>
+         <button class="pick edt" type="button">edit</button>
+         <button class="pick rm" type="button" title="remove this faction">×</button></span>
        <span class="num" data-c="alive">0</span>
        <span class="num" data-c="kills">0</span>
        <span class="num" data-c="losses">0</span>
        <span class="num" data-c="shots">0</span>
        <span class="num" data-c="salvage">0</span>
        <span class="bar"><i style="background:${PALETTE[(f - 1) % PALETTE.length]}"></i></span>`;
-    row.querySelector(".pick").onclick = () => pick(f);
+    row.querySelector(".ch").onclick = () => pick(f);
+    row.querySelector(".edt").onclick = () => editFaction(f - 1);
+    row.querySelector(".rm").onclick = () => removeFaction(f - 1);
+    row.querySelector(".rm").hidden = factions.length <= 1;
     $("fleets").append(row);
     rows.set(f, row);
   }
   paintPrograms();
 }
 
+$("addf").onclick = () => {
+  if (factions.length >= MAXF) return;
+  factions.push(newFaction());
+  buildRows();
+};
+
+function removeFaction(i) {
+  if (factions.length <= 1) return;
+  factions.splice(i, 1);
+  if (cur >= factions.length) cur = factions.length - 1;
+  buildRows();
+}
+
 function paintPrograms() {
   for (const [f, row] of rows) {
-    const chosen = programs[f - 1];
-    row.querySelector(".name").textContent = chosen ? fileName(chosen) : "house brain";
-    row.querySelector(".name").title = chosen || "the game's built-in brain";
+    const fac = factions[f - 1];
+    const name = fac.path ? fileName(fac.path) : (fac.text !== null ? "unsaved code" : "house brain");
+    row.querySelector(".name").innerHTML =
+      name + (fac.dirty ? ' <span class="dot">•</span>' : "");
+    row.querySelector(".name").title = fac.path || "the game's built-in brain";
   }
 }
 
@@ -392,7 +415,6 @@ function writeCounter(cell, value) {
 }
 
 function paintFleets(fleets) {
-  buildRows(fleets.length);
   const strongest = Math.max(1, ...fleets.map((f) => f.alive));
   for (const f of fleets) {
     const row = rows.get(f.faction);
@@ -425,9 +447,7 @@ async function poll() {
   }
 }
 
-// Before the first poll answers, show the fleets the form is configured for.
-$("factions").onchange = () => buildRows(Number($("factions").value));
-buildRows(2);
+buildRows();
 setInterval(poll, 120);
 poll();
 
@@ -458,12 +478,15 @@ const STARTER = `; A fleet program: one copy flies each of your ships.
         (fire (nth tgt 1) (nth tgt 2)))))
 `;
 
-let ed = null, edPath = "", edDirty = false;
+let ed = null;
+let cur = 0; // the faction whose program is in the editor
 
-function paintPath() {
+function paintEdHead() {
+  const f = factions[cur];
   const el = $("edpath");
-  el.textContent = edPath || "untitled.filo";
-  el.classList.toggle("dirty", edDirty);
+  el.innerHTML = `<span class="swatch" style="background:${PALETTE[cur % PALETTE.length]}"></span> ` +
+    `Faction ${cur + 1} · ` + (f.path ? fileName(f.path) : "untitled.filo");
+  el.classList.toggle("dirty", f.dirty);
 }
 
 function edSay(msg, cls) {
@@ -480,12 +503,14 @@ function initEditor() {
     completions: CONTRACT,
     value: STARTER,
     onChange: () => {
-      edDirty = true;
-      paintPath();
+      const f = factions[cur];
+      f.text = ed.getValue();
+      f.dirty = true;
+      paintEdHead();
+      paintPrograms();
       if (ed.errors.size) { ed.clearErrors(); edSay("", ""); }
     },
   });
-  ed.focus();
 }
 
 function showView(view) {
@@ -493,36 +518,60 @@ function showView(view) {
   $("view-editor").hidden = view !== "editor";
   $("tab-battle").classList.toggle("on", view === "battle");
   $("tab-editor").classList.toggle("on", view === "editor");
-  if (view === "editor" && !ed) initEditor();
-  if (view === "editor") ed.focus();
 }
 $("tab-battle").onclick = () => showView("battle");
-$("tab-editor").onclick = () => showView("editor");
+$("tab-editor").onclick = () => editFaction(cur);
+
+// editFaction opens THE faction's program: each faction owns its buffer, so
+// two codes are edited side by side and battle each other — the point of the
+// whole garage.
+async function editFaction(i) {
+  cur = i;
+  showView("editor");
+  if (!ed) initEditor();
+  const f = factions[i];
+  if (f.text === null) {
+    if (f.path) {
+      try { f.text = await window.editorRead(f.path); }
+      catch (e) { edSay(String(e), "bad"); f.text = STARTER; }
+    } else {
+      f.text = STARTER;
+    }
+  }
+  if (ed.getValue() !== f.text) ed.setValue(f.text);
+  else ed.clearErrors();
+  edSay("", "");
+  paintEdHead();
+  ed.focus();
+}
 
 $("ednew").onclick = () => {
+  const f = factions[cur];
+  f.path = ""; f.text = STARTER; f.dirty = true;
   ed.setValue(STARTER);
-  edPath = ""; edDirty = false;
-  paintPath(); edSay("", "");
+  paintEdHead(); paintPrograms(); edSay("", "");
 };
 
 $("edopen").onclick = async () => {
   try {
     const p = await window.editorPickOpen();
     if (!p) return;
-    ed.setValue(await window.editorRead(p));
-    edPath = p; edDirty = false;
-    paintPath(); edSay("", "");
+    const f = factions[cur];
+    f.path = p; f.text = await window.editorRead(p); f.dirty = false;
+    ed.setValue(f.text);
+    paintEdHead(); paintPrograms(); edSay("", "");
   } catch (e) { edSay(String(e), "bad"); }
 };
 
 async function edSave(as) {
   try {
-    let p = edPath;
+    const f = factions[cur];
+    let p = f.path;
     if (as || !p) p = await window.editorPickSave();
     if (!p) return;
     await window.editorWrite(p, ed.getValue());
-    edPath = p; edDirty = false;
-    paintPath(); edSay("saved " + p, "good");
+    f.path = p; f.text = ed.getValue(); f.dirty = false;
+    paintEdHead(); paintPrograms(); edSay("saved " + p, "good");
   } catch (e) { edSay(String(e), "bad"); }
 }
 $("edsave").onclick = () => edSave(false);
