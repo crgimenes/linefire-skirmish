@@ -1,6 +1,9 @@
 package garage
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // The garage understands a battle purely from the event stream — the same
 // stream the trace records and the checker audits. This is that fold, with no
@@ -104,5 +107,33 @@ func TestProgramFlagKeepsFactionOrder(t *testing.T) {
 	}
 	if got := joinPrograms([]string{"a.filo", "", "c.filo"}); got != "a.filo,,c.filo" {
 		t.Errorf("faction order broken: %q", got)
+	}
+}
+
+// The garage takes its focus back once the battle it launched is really up —
+// the game activates its own window (it must, or macOS throttles it), and
+// without this the next click on the garage is spent waking the window instead
+// of pressing the button under it. Only on the FIRST battle of a launch:
+// restaging must not yank focus away from whatever the user moved on to.
+func TestTheGarageTakesItsFocusBackWhenTheBattleIsUp(t *testing.T) {
+	g := newGarage("linefire-skirmish")
+	reclaimed := make(chan struct{}, 4)
+	g.reclaim = func() { reclaimed <- struct{}{} }
+
+	g.apply(event{Ev: "battle", Mode: "lastfleet"})
+	select {
+	case <-reclaimed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the battle came up and the garage never asked for its focus back")
+	}
+
+	// The rematch of an endless run, and a restage: the user has moved on by
+	// now, and a window that jumps in front of them is worse than a click.
+	g.apply(event{Ev: "battle", Mode: "lastfleet"})
+	g.apply(event{Ev: "battle", Mode: "lastfleet"})
+	select {
+	case <-reclaimed:
+		t.Fatal("a later battle stole the focus back; only the first may")
+	case <-time.After(300 * time.Millisecond):
 	}
 }

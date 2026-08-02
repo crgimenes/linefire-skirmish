@@ -102,6 +102,13 @@ func Run(opts Options) error {
 	}
 	defer w.Destroy()
 
+	// When a battle actually comes up, the game has just activated its own
+	// window and taken the focus with it. Raise puts the garage back in front so
+	// the next click lands on the button instead of being spent waking the
+	// window. Dispatch because the event arrives on the reader's goroutine and
+	// the window belongs to the UI thread.
+	g.reclaim = func() { w.Dispatch(w.Raise) }
+
 	w.SetTitle("Linefire Skirmish — Garage")
 	w.SetSize(900, 680, glaze.HintNone)
 	// A floor roughly the size of a phone screen: the layout collapses to one

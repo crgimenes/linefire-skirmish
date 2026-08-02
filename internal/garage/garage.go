@@ -61,6 +61,9 @@ type Status struct {
 // bound into JavaScript, so this type IS the UI's API.
 type Garage struct {
 	gamePath string
+	// reclaim is called once a battle this garage launched is really up, so the
+	// window can take the focus back that the game just took. Nil in tests.
+	reclaim func()
 
 	mu      sync.Mutex
 	cmd     *exec.Cmd
@@ -286,6 +289,16 @@ func (g *Garage) apply(ev event) {
 		g.outcome = ""
 		g.board = map[int]*FleetBoard{} // a new battle, a clean board
 		g.ships = map[int]int{}
+		// The battle is really up, which means the game's window has activated
+		// itself and taken our focus — it HAS to activate, or macOS throttles it
+		// to single digit FPS. Take the focus back now, on the FIRST battle of
+		// this launch only: without it the next click on the garage is spent
+		// activating the window instead of pressing the button under the cursor,
+		// and the panel reads as dead. Restaging must not yank focus back from
+		// whatever the user has moved on to.
+		if g.battles == 1 && g.reclaim != nil {
+			go g.reclaim() // off the event reader: the UI thread is somebody else's
+		}
 	case "spawn":
 		g.ships[ev.ID] = ev.Faction // the roll: a kill names its shooter by SHIP
 		if b := fleet(ev.Faction); b != nil {
