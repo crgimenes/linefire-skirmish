@@ -45,6 +45,16 @@ The garage has a real menu bar, and on macOS that is not decoration: a WebView
 has no route to the editing commands without one, so `Cmd+C` and `Cmd+V` would
 do nothing in every text field on the page.
 
+### The editor
+
+The garage's second room: a real code editor (line numbers, Filo syntax
+highlighting, autocompletion over the ship contract, `Cmd+S`) for writing
+fleet programs without leaving the game. **Validate** compiles with the
+battle's own engine and flies one dry tick — the failing line is marked in
+place. **Quick test** fights 20 headless battles against the house brain and
+reports the score, in seconds, in-process. The component is
+[`glaze/editor`](https://github.com/crgimenes/glaze), shared with other tools.
+
 ## The battle
 
 ```bash

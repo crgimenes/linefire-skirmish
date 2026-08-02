@@ -4,10 +4,10 @@ github.com/crgimenes/filo v0.0.16 h1:/AEn/R5k33UXRfby/ZpJxIVWO5lQAPgnGmxM7eSUG7E
 github.com/crgimenes/filo v0.0.16/go.mod h1:kt2+3JJivo6/HWOJlphW7iIQdFoB3V5RnL+oBQcHN8w=
 github.com/crgimenes/gion v0.0.2 h1:J0cBNbR8O0FlSvVTforq3T+9oTjzXaD29GH+4X4Neeg=
 github.com/crgimenes/gion v0.0.2/go.mod h1:Vpql01hlzrUNNXXeCElbXMq5/QJ+4z7eM3z3XoPN7ls=
-github.com/crgimenes/glaze v0.0.35 h1:atf9kZwztf+gO+ZHXaIJTs9OKacgZx6xfCcTXi10QM8=
-github.com/crgimenes/glaze v0.0.35/go.mod h1:ZuCIST0F5U6wJLw5ZtqfcTIQA7LI/m2MHv7iMOBmu6U=
-github.com/crgimenes/linefire v0.0.43 h1:81q0lpbFF9x0wkrN0WucUVICOEbFJwIhw1+HgkQVEI4=
-github.com/crgimenes/linefire v0.0.43/go.mod h1:rdpPg5/8uWn3VP8rbmCF/m3W61GEcK/Nvjp2hiYnitE=
+github.com/crgimenes/glaze v0.0.36 h1:6HOHSlShZ9/IqEQQUDSj0m/rIqhlTy8dUoeJVwjmRz4=
+github.com/crgimenes/glaze v0.0.36/go.mod h1:ZuCIST0F5U6wJLw5ZtqfcTIQA7LI/m2MHv7iMOBmu6U=
+github.com/crgimenes/linefire v0.0.44 h1:voeEC2EFpa0uRlv5Y6PODzYrUKI0ttVKhnS0xfVnEEU=
+github.com/crgimenes/linefire v0.0.44/go.mod h1:rdpPg5/8uWn3VP8rbmCF/m3W61GEcK/Nvjp2hiYnitE=
 github.com/crgimenes/minigui v0.1.9 h1:D432XNJE4WsZBrFzmgzfTuTYw4yzBwAmmusCHKCebrk=
 github.com/crgimenes/minigui v0.1.9/go.mod h1:aP4n8LCLDaSL7pQDh4RyZ5qlFPGDvfhb9tFn6Fw9cRs=
 github.com/crgimenes/native v0.1.5 h1:DeuqxhlgEkOJGvLMole/8fzahW7vTpgtMkx+EmKD1/g=

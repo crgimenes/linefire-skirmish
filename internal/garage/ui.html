@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Linefire Skirmish — Garage</title>
+<link rel="stylesheet" href="/editor.css">
 <style>
   /* Linefire's own scheme: near-black field, cyan instruments. Nothing is
      fetched from a network — the garage is a local workshop, and a webview is
@@ -113,6 +114,34 @@
   .foot { margin-top: 14px; color: var(--dim); font-size: 11px;
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+  /* The garage's two rooms: the battle console and the program editor. */
+  .tabs { display: flex; gap: 2px; }
+  .tabs button {
+    background: transparent; color: var(--dim); border: 1px solid transparent;
+    border-bottom: none; padding: 6px 14px; font: inherit; cursor: pointer;
+    letter-spacing: 1px; text-transform: uppercase; font-size: 11px;
+  }
+  .tabs button.on { color: var(--accent); border-color: var(--line); background: var(--panel); }
+
+  #view-editor { display: flex; flex-direction: column; flex: 1; min-height: 0;
+    align-items: stretch; /* the battle main is a grid with align-items:start — undo it here */ }
+  .edwrap { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .edbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .edbar .spacer { flex: 1; }
+  .edpath { color: var(--dim); overflow: hidden; text-overflow: ellipsis;
+            white-space: nowrap; max-width: 40%; }
+  .edpath.dirty::after { content: " •"; color: var(--accent); }
+  #ed { flex: 1; min-height: 0; }
+  /* The editor wears the garage's own palette: theming is CSS variables. */
+  #ed.ge {
+    --ge-bg: #060c12; --ge-gutter-bg: #0a1118; --ge-border: var(--line);
+    --ge-fg: var(--ink); --ge-caret: var(--accent);
+    --ge-comp-bg: var(--panel); --ge-err: var(--danger);
+  }
+  .edout { margin-top: 10px; min-height: 1.5em; color: var(--dim); white-space: pre-wrap; }
+  .edout.bad { color: var(--danger); }
+  .edout.good { color: var(--accent); }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before { animation: none !important; transition: none !important; }
   }
@@ -125,10 +154,14 @@
     <h1>Linefire Skirmish</h1>
     <div class="sub">Garage</div>
   </div>
+  <nav class="tabs">
+    <button id="tab-battle" class="on">Battle</button>
+    <button id="tab-editor">Editor</button>
+  </nav>
   <div id="state" class="state">no battle</div>
 </header>
 
-<main>
+<main id="view-battle">
   <section>
     <h2>Battle</h2>
     <label>Mode
@@ -199,6 +232,24 @@
   </section>
 </main>
 
+<main id="view-editor" hidden>
+  <section class="edwrap">
+    <div class="edbar">
+      <span id="edpath" class="edpath">untitled.filo</span>
+      <button id="ednew" class="pick">New</button>
+      <button id="edopen" class="pick">Open…</button>
+      <button id="edsave" class="pick">Save</button>
+      <button id="edsaveas" class="pick">Save as…</button>
+      <span class="spacer"></span>
+      <button id="edvalidate" class="pick">Validate</button>
+      <button id="edtest" class="pick">Quick test</button>
+    </div>
+    <div id="ed"></div>
+    <div id="edout" class="edout"></div>
+  </section>
+</main>
+
+<script src="/editor.js"></script>
 <script>
 // The eight bright VGA colours, in the game's own order: colour says WHICH
 // FACTION here exactly as it does on the battlefield.
@@ -379,6 +430,133 @@ $("factions").onchange = () => buildRows(Number($("factions").value));
 buildRows(2);
 setInterval(poll, 120);
 poll();
+
+// ---- the editor room ------------------------------------------------------
+
+// The ship contract's vocabulary, for completion. The source of truth is
+// linefire's game/pilot.go; this list is the editor's copy of it, and growing
+// the contract means growing it here too.
+const CONTRACT = [
+  "self-x", "self-y", "self-vx", "self-vy", "self-heading", "self-hull",
+  "self-hull-max", "self-shield", "self-weapon", "self-kind", "self-faction",
+  "self-speed", "self-radar", "self-nav-blocked", "fire-ready", "first-tick",
+  "field-w", "field-h", "tick", "allies", "enemies", "loot",
+  "move", "seek", "face", "fire",
+  "dist", "bearing", "norm-angle", "sin", "cos", "atan2", "sqrt", "abs",
+  "mod", "floor", "min", "max", "clamp",
+];
+
+const STARTER = `; A fleet program: one copy flies each of your ships.
+; Instruments are globals (self-x, enemies, loot...); orders are calls.
+; The full contract lives in linefire's game/pilot.go.
+
+(if (is-empty enemies)
+    (seek (/ field-w 2) (/ field-h 2))
+    (let ((tgt (head enemies)))
+      (do
+        (face (bearing self-x self-y (nth tgt 1) (nth tgt 2)))
+        (fire (nth tgt 1) (nth tgt 2)))))
+`;
+
+let ed = null, edPath = "", edDirty = false;
+
+function paintPath() {
+  const el = $("edpath");
+  el.textContent = edPath || "untitled.filo";
+  el.classList.toggle("dirty", edDirty);
+}
+
+function edSay(msg, cls) {
+  const out = $("edout");
+  out.textContent = msg;
+  out.className = "edout" + (cls ? " " + cls : "");
+}
+
+// The editor is built on first entry: GlazeEditor measures its font from the
+// DOM, and a hidden element measures zero.
+function initEditor() {
+  ed = new GlazeEditor($("ed"), {
+    language: "filo",
+    completions: CONTRACT,
+    value: STARTER,
+    onChange: () => {
+      edDirty = true;
+      paintPath();
+      if (ed.errors.size) { ed.clearErrors(); edSay("", ""); }
+    },
+  });
+  ed.focus();
+}
+
+function showView(view) {
+  $("view-battle").hidden = view !== "battle";
+  $("view-editor").hidden = view !== "editor";
+  $("tab-battle").classList.toggle("on", view === "battle");
+  $("tab-editor").classList.toggle("on", view === "editor");
+  if (view === "editor" && !ed) initEditor();
+  if (view === "editor") ed.focus();
+}
+$("tab-battle").onclick = () => showView("battle");
+$("tab-editor").onclick = () => showView("editor");
+
+$("ednew").onclick = () => {
+  ed.setValue(STARTER);
+  edPath = ""; edDirty = false;
+  paintPath(); edSay("", "");
+};
+
+$("edopen").onclick = async () => {
+  try {
+    const p = await window.editorPickOpen();
+    if (!p) return;
+    ed.setValue(await window.editorRead(p));
+    edPath = p; edDirty = false;
+    paintPath(); edSay("", "");
+  } catch (e) { edSay(String(e), "bad"); }
+};
+
+async function edSave(as) {
+  try {
+    let p = edPath;
+    if (as || !p) p = await window.editorPickSave();
+    if (!p) return;
+    await window.editorWrite(p, ed.getValue());
+    edPath = p; edDirty = false;
+    paintPath(); edSay("saved " + p, "good");
+  } catch (e) { edSay(String(e), "bad"); }
+}
+$("edsave").onclick = () => edSave(false);
+$("edsaveas").onclick = () => edSave(true);
+
+$("edvalidate").onclick = async () => {
+  try {
+    const issue = await window.editorValidate(ed.getValue());
+    if (!issue) {
+      ed.clearErrors();
+      edSay("program OK — compiles and survives its first tick", "good");
+      return;
+    }
+    if (issue.Line > 0) ed.setErrors([{line: issue.Line, msg: issue.Msg}]);
+    edSay((issue.Line > 0 ? "line " + issue.Line + ": " : "") + issue.Msg, "bad");
+  } catch (e) { edSay(String(e), "bad"); }
+};
+
+$("edtest").onclick = async () => {
+  $("edtest").disabled = true;
+  edSay("fighting 20 battles…", "");
+  try {
+    edSay(await window.editorQuickTest(ed.getValue()), "good");
+  } catch (e) { edSay(String(e), "bad"); }
+  $("edtest").disabled = false;
+};
+
+// Cmd/Ctrl+S saves from anywhere in the page — the editor is where hands are.
+window.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+    e.preventDefault();
+    if (ed && !$("view-editor").hidden) edSave(false);
+  }
+});
 </script>
 </body>
 </html>

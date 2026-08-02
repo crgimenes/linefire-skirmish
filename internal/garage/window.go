@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/crgimenes/glaze"
+	"github.com/crgimenes/glaze/editor"
+	"github.com/crgimenes/linefire/game"
 )
 
 //go:embed ui.html
@@ -64,10 +66,24 @@ func serveUI() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	edJS, err := editor.JS("filo")
+	if err != nil {
+		return "", err
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(uiHTML)
+	})
+	// The code editor (glaze/editor) is embedded like everything else: the
+	// garage stays a workshop with no network beyond its own loopback.
+	mux.HandleFunc("/editor.js", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		_, _ = w.Write(edJS)
+	})
+	mux.HandleFunc("/editor.css", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		_, _ = w.Write(editor.CSS())
 	})
 	go func() {
 		srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
@@ -133,6 +149,34 @@ func Run(opts Options) error {
 	})
 	if err != nil {
 		return err
+	}
+
+	// The editor pane's own verbs. Binds run off the UI thread, so the quick
+	// test's couple of seconds of headless battles never freeze the window.
+	binds := map[string]any{
+		"editorPickOpen": func() (string, error) {
+			return w.OpenFile(glaze.FileDialogOptions{
+				Title:   "Open a Filo program",
+				Filters: []glaze.FileFilter{{Name: "Filo programs", Extensions: []string{"filo"}}},
+			})
+		},
+		"editorPickSave": func() (string, error) {
+			return w.SaveFile(glaze.FileDialogOptions{
+				Title:    "Save the program",
+				Filename: "fleet.filo",
+			})
+		},
+		"editorRead":  readProgram,
+		"editorWrite": writeProgram,
+		"editorValidate": func(src string) *game.PilotIssue {
+			return game.ValidatePilot(src)
+		},
+		"editorQuickTest": quickTest,
+	}
+	for name, fn := range binds {
+		if err := w.Bind(name, fn); err != nil {
+			return err
+		}
 	}
 
 	m, err := installMenu(w, w.Terminate)
