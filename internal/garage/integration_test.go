@@ -2,6 +2,7 @@ package garage
 
 import (
 	"os"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -86,4 +87,47 @@ func TestLiveBattleFillsTheBoard(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatal("the garage still reports a battle five seconds after ceasing it")
+}
+
+// Toggling a LAUNCH flag has to replace the process, not reconfigure the one
+// flying: start a battle in a window, uncheck windowed, deploy again, and the
+// window must go away and the battle come back as the overlay. crg asked for
+// exactly this and it is easy to get wrong, because every other knob on the
+// form is handled by talking to the running game.
+func TestUncheckingWindowedReplacesTheBattle(t *testing.T) {
+	bin := os.Getenv("SKIRMISH_GAME")
+	if bin == "" {
+		t.Skip("SKIRMISH_GAME is not set: skipping the live battle")
+	}
+	g := newGarage(bin)
+	defer func() { _ = g.Cease() }()
+
+	windowed := Setup{Mode: "lastfleet", Map: "arena", Factions: 2, Ships: 3, Window: true}
+	if err := g.Deploy(windowed); err != nil {
+		t.Fatalf("deploy windowed: %v", err)
+	}
+	first := g.pid()
+	if first == 0 {
+		t.Fatal("no battle process after the first deploy")
+	}
+
+	overlay := windowed
+	overlay.Window = false
+	if !needsRelaunch(windowed, overlay) {
+		t.Fatal("unchecking windowed did not ask for a relaunch")
+	}
+	if err := g.Deploy(overlay); err != nil {
+		t.Fatalf("deploy overlay: %v", err)
+	}
+	second := g.pid()
+	if second == 0 {
+		t.Fatal("no battle process after the second deploy")
+	}
+	if second == first {
+		t.Error("the same process kept flying: the window would still be on screen")
+	}
+	// The old one must be GONE, not merely replaced in the garage's hand.
+	if err := syscall.Kill(first, 0); err == nil {
+		t.Errorf("process %d is still alive after being replaced", first)
+	}
 }

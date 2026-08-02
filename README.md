@@ -30,10 +30,16 @@ It launches the battle in its own process — the same executable, re-run with
 `-control` — and talks to it over the control protocol, so a battle can be
 reconfigured or restaged without closing anything.
 
-Sound is a checkbox there, **off by default**: the overlay is something you
+Sound is a checkbox there, off unless you ask: the overlay is something you
 leave running over your desktop while doing something else, and a battle that
 starts making noise on its own is a battle you close. Turning it on relaunches
-the battle, because a process already flying cannot grow ears.
+the battle, because a process already flying cannot grow ears. There is no
+soundtrack here — the songs belong to Linefire's arcade cabinet; what you get
+is the fighting.
+
+A real match (`lastfleet` or `timed`) ENDS: the winning faction is named on
+screen, in its own colour, and the field stays as it was. Another battle is a
+Restage or a new Deploy away.
 
 The garage has a real menu bar, and on macOS that is not decoration: a WebView
 has no route to the editing commands without one, so `Cmd+C` and `Cmd+V` would
@@ -57,12 +63,13 @@ go run ./cmd/linefire-skirmish -play
 | `-ai` | comma-separated `.filo` programs, one per faction in order |
 | `-ipc` | comma-separated commands; each child process pilots its faction |
 | `-window` | an ordinary window instead of the desktop overlay |
-| `-sound` | play the arcade attract-mode audio (silent by default) |
+| `-sound` | play the battle's sound effects (silent by default) |
 | `-debug` | start with the debug HUD up |
 
-The overlay reads no keys — every keystroke belongs to whatever you are doing
-underneath. The one clickable thing is a small floating panel with Quit;
-Ctrl+C in the launching terminal works too.
+The overlay is inert: it reads no keys and takes no clicks — every keystroke
+and every click belongs to whatever you are doing underneath. Starting and
+stopping battles is the garage's job; Ctrl+C in the launching terminal quits
+one started from there.
 
 ## Writing a fleet's AI
 

@@ -28,8 +28,8 @@
 //	linefire-skirmish -factions 3  three teams instead of two (up to 8)
 //	linefire-skirmish -map maze    fight in a cave labyrinth instead of the open
 //	linefire-skirmish -mode lastfleet   a real match: fleets land, no
-//	                               reinforcements, last faction standing
-//	                               prevails, rematch on a fresh field
+//	                               reinforcements, and the last faction standing
+//	                               prevails — the verdict then HOLDS on screen
 //	linefire-skirmish -mode timed -duration 120   most kills when time runs out
 //	linefire-skirmish -ships 6     fleet size per faction in a real match
 //	linefire-skirmish -ai a.filo   faction 1 flies your Filo program (see ai/)
@@ -43,7 +43,9 @@
 //	linefire-skirmish -control     the garage protocol: battle events out on
 //	                               stdout, match commands in on stdin (JSONL);
 //	                               e.g. {"op":"match","mode":"timed","ships":6}
-//	linefire-skirmish -sound       same, with the arcade attract-mode audio
+//	linefire-skirmish -sound       same, with the battle's sound effects (there
+//	                               is no soundtrack here: the songs are the
+//	                               campaign's)
 //	linefire-skirmish -debug       same, with the debug HUD up
 //	linefire-skirmish -window      in an ordinary window, not over the desktop
 //
@@ -53,11 +55,10 @@
 // faction 1 the house AI. Writing these programs IS how skirmish is played —
 // the contract they fly under is documented in linefire's game/pilot.go.
 //
-// The game reads no keys — every keystroke belongs to the desktop. The one
-// clickable thing is a small floating panel (NeoFrame-style), draggable by its
-// title bar, holding the controls the program needs because it has no real
-// window: Quit today, more later. Everywhere off the panel the mouse passes
-// straight through. Ctrl+C in the launching terminal also quits.
+// The battle window is inert: it reads no keys and takes no clicks — every
+// keystroke and every click belongs to whatever is underneath. Starting and
+// stopping battles is the garage's job. Ctrl+C in the launching terminal quits
+// a battle started from one.
 package main
 
 import (
@@ -88,10 +89,8 @@ const (
 
 // runWindowed shows the same battle in a plain window: decorated and opaque, its
 // frame standing in for the arena border the overlay leaves to the screen edge.
-// The game still reads no keys, and the panel works like anywhere else — minus
-// the passthrough dance, since an ordinary window owns its mouse. It is a
-// diagnostic, and it is also the easiest way to look at the game while working
-// on it.
+// It is a diagnostic, and it is also the easiest way to look at the game while
+// working on it.
 func runWindowed(g *game.Game) {
 	ebiten.SetWindowSize(1280, 720)
 	ebiten.SetWindowTitle("Linefire Skirmish (windowed)")
@@ -99,7 +98,7 @@ func runWindowed(g *game.Game) {
 	// A phone-sized floor: the arena is fitted to the view, so a window dragged
 	// smaller than this leaves a battlefield with no room to manoeuvre in.
 	ebiten.SetWindowSizeLimits(battleMinWidth, battleMinHeight, -1, -1)
-	if err := ebiten.RunGame(newShell(g, false)); err != nil {
+	if err := ebiten.RunGame(g); err != nil {
 		log.Fatalf("linefire-skirmish: %v", err)
 	}
 }
@@ -377,8 +376,10 @@ func main() {
 
 	// A transparent, undecorated, always-on-top window covering the monitor:
 	// the NeoFrame recipe. The desktop underneath stays fully usable — the
-	// overlay takes the mouse only while the cursor is on the floating panel
-	// (the shell flips the passthrough flag per frame).
+	// The overlay is click-through, always and everywhere: it has nothing to
+	// click. It used to carry a floating Quit panel, which meant flipping the
+	// passthrough flag per frame to keep that one rectangle clickable — all of
+	// it gone now that the garage is the place a battle is started and stopped.
 	const name = "Linefire Skirmish"
 	width, height := ebiten.Monitor().Size()
 	ebiten.SetWindowDecorated(false)
@@ -389,7 +390,7 @@ func main() {
 	ebiten.SetWindowTitle(name)
 	ebiten.SetRunnableOnUnfocused(true)
 
-	err = ebiten.RunGameWithOptions(newShell(g, true), &ebiten.RunGameOptions{
+	err = ebiten.RunGameWithOptions(g, &ebiten.RunGameOptions{
 		ScreenTransparent: true,
 		SkipTaskbar:       true,
 		X11ClassName:      name,

@@ -198,6 +198,18 @@ func (g *Garage) launch(s Setup) error {
 	return nil
 }
 
+// pid is the battle process's id, or 0 when no battle is flying. It exists for
+// the tests that need to prove a relaunch actually REPLACED the process rather
+// than reconfiguring the one already up.
+func (g *Garage) pid() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.cmd == nil || g.cmd.Process == nil {
+		return 0
+	}
+	return g.cmd.Process.Pid
+}
+
 // Cease ends the battle: the game process is stopped and the board freezes on
 // the last standing it reported.
 func (g *Garage) Cease() error {
