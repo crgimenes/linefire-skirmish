@@ -4,7 +4,7 @@ go 1.26.5
 
 require (
 	github.com/crgimenes/glaze v0.0.33
-	github.com/crgimenes/linefire v0.0.33
+	github.com/crgimenes/linefire v0.0.34
 	github.com/crgimenes/minigui v0.1.9
 	github.com/hajimehoshi/ebiten/v2 v2.10.0-alpha.13
 )

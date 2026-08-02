@@ -66,6 +66,13 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
+// The smallest window a battle is still worth watching in — a phone-sized
+// floor, matching the garage's.
+const (
+	battleMinWidth  = 480
+	battleMinHeight = 360
+)
+
 // runWindowed shows the same battle in a plain window: decorated and opaque, its
 // frame standing in for the arena border the overlay leaves to the screen edge.
 // The game still reads no keys, and the panel works like anywhere else — minus
@@ -76,6 +83,9 @@ func runWindowed(g *game.Game) {
 	ebiten.SetWindowSize(1280, 720)
 	ebiten.SetWindowTitle("Linefire Skirmish (windowed)")
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
+	// A phone-sized floor: the arena is fitted to the view, so a window dragged
+	// smaller than this leaves a battlefield with no room to manoeuvre in.
+	ebiten.SetWindowSizeLimits(battleMinWidth, battleMinHeight, -1, -1)
 	if err := ebiten.RunGame(newShell(g, false)); err != nil {
 		log.Fatalf("linefire-skirmish: %v", err)
 	}

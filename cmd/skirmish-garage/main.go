@@ -34,6 +34,12 @@ import (
 //go:embed ui.html
 var uiHTML []byte
 
+// The smallest window the garage is still usable in — a phone-sized floor.
+const (
+	garageMinWidth  = 380
+	garageMinHeight = 560
+)
+
 // gameBinary is the game the garage launches: the -game flag, else a binary
 // named linefire-skirmish sitting next to this one (how a release ships), else
 // whatever the PATH offers (how a development checkout runs).
@@ -94,6 +100,10 @@ func main() {
 
 	w.SetTitle("Linefire Skirmish — Garage")
 	w.SetSize(900, 680, glaze.HintNone)
+	// A floor roughly the size of a phone screen: the layout collapses to one
+	// column well before this, but dragged any smaller the window stops being
+	// a workshop and becomes a sliver.
+	w.SetSize(garageMinWidth, garageMinHeight, glaze.HintMin)
 
 	// The garage's own methods are the UI's API: deploy, cease, restage, poll.
 	bound, err := glaze.BindMethods(w, "garage", g)

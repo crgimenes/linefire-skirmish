@@ -79,6 +79,9 @@
      Redeploy — is showing. */
   .actions { display: flex; gap: 8px; margin-top: 4px; }
   .actions button { flex: 1 1 auto; min-width: 0; padding: 8px 4px; }
+  /* An order in flight: the row acknowledges the click before the battle can
+     possibly answer it. */
+  .actions.busy { opacity: .5; pointer-events: none; }
 
   /* The board. Each fleet is a row of its own colour with a strength bar, so
      who is winning reads before any number does. */
@@ -154,7 +157,7 @@
       <input id="window" type="checkbox">
       <span>Windowed (not over the desktop)</span>
     </div>
-    <div class="actions">
+    <div class="actions" id="actions">
       <button id="deploy" class="go">Deploy</button>
       <button id="restage" disabled>Restage</button>
       <button id="cease" disabled>Cease</button>
@@ -199,12 +202,24 @@ function setup() {
   };
 }
 
+// An order acknowledges itself the moment it is given: the row goes busy at
+// once and the board is refreshed as soon as the order lands, instead of
+// waiting for the next poll to notice. Launching a battle takes the time it
+// takes to start a process — the point is that the click never feels ignored.
+let busy = false;
 async function guard(fn) {
+  if (busy) return;
+  busy = true;
+  $("actions").classList.add("busy");
   try {
     $("err").textContent = "";
     await fn();
   } catch (e) {
     $("err").textContent = String(e);
+  } finally {
+    busy = false;
+    $("actions").classList.remove("busy");
+    poll();
   }
 }
 
@@ -324,7 +339,7 @@ async function poll() {
 // Before the first poll answers, show the fleets the form is configured for.
 $("factions").oninput = () => buildRows(Number($("factions").value));
 buildRows(2);
-setInterval(poll, 250);
+setInterval(poll, 120);
 poll();
 </script>
 </body>
