@@ -3,7 +3,7 @@ package garage
 import (
 	"os"
 	"path/filepath"
-	"syscall"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -128,7 +128,8 @@ func TestUncheckingWindowedReplacesTheBattle(t *testing.T) {
 		t.Error("the same process kept flying: the window would still be on screen")
 	}
 	// The old one must be GONE, not merely replaced in the garage's hand.
-	if err := syscall.Kill(first, 0); err == nil {
+	alive, known := processAlive(first)
+	if known && alive {
 		t.Errorf("process %d is still alive after being replaced", first)
 	}
 }
@@ -215,6 +216,9 @@ func TestLiveAgentFliesAFaction(t *testing.T) {
 	bin := os.Getenv("SKIRMISH_GAME")
 	if bin == "" {
 		t.Skip("SKIRMISH_GAME is not set: skipping the live battle")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("the driver in this test is a shell script; agents themselves are cross-platform")
 	}
 	command := "/bin/sh " + agentScript(t)
 
