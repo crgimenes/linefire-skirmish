@@ -49,8 +49,10 @@ jobs:
         timeout-minutes: 10
         run: go test -timeout 180s -count 1 ./...
 
-  # The release matrix, compile-checked. Linux is absent on purpose: it needs
-  # cgo and is covered natively by the test job above and by release-linux.
+  # Every target the release ships, compile-checked. Nothing here needs cgo —
+  # Ebitengine has been pure Go on Linux too since v2.10 — which is what lets
+  # one host cross-compile the whole matrix, and why the release is a local
+  # script (the shared ./release.sh) rather than a workflow.
   cross-build:
     name: cross-build-${{ matrix.goos }}-${{ matrix.goarch }}
     runs-on: ubuntu-latest
@@ -61,6 +63,9 @@ jobs:
           - { goos: darwin, goarch: amd64 }
           - { goos: darwin, goarch: arm64 }
           - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

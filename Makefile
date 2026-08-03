@@ -5,9 +5,8 @@
 # Targets:
 #   make build       — build the binary for the current OS/arch into bin/
 #   make build-cross — also build for linux/amd64 and windows/amd64
-#   make release     — the shipped artefacts: one stamped, compressed file per
-#                      platform in dist/, plus SHA256SUMS
-#   make icons       — write the application icon out as PNGs to look at
+#   make release     — publish a release through the shared ./release.sh
+#   make icons       — redraw the application icon from the game's own art
 #   make run         — the desktop overlay (the aquarium), i.e. -play
 #   make run-window  — the same battle in an ordinary window (what you want while working)
 #   make run-ai      — a windowed match with ai/hunter.filo flying faction 1
@@ -22,7 +21,7 @@
 #   make fmt         — report files that are not gofmt-clean
 #   make security    — gosec ./...
 #   make tidy        — go mod tidy
-#   make clean       — remove bin/ and stray traces
+#   make clean       — remove bin/, dist/ and stray traces
 #
 # Knobs (any target): SHIPS=6 FACTIONS=4 SIM=40 MAP=maze AI=ai/hunter.filo
 
@@ -34,9 +33,10 @@ CMDS   := $(notdir $(wildcard cmd/*))
 GOOS   := $(shell go env GOOS)
 GOARCH := $(shell go env GOARCH)
 
+# Version stamping for local builds; the release stamps its own from the tag,
+# and its target matrix lives in the shared release.sh, not here.
 VERSION         := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 RELEASE_LDFLAGS := -s -w -X main.version=$(VERSION)
-RELEASE_TARGETS := darwin/arm64 darwin/amd64 windows/amd64
 
 # Match knobs. The game's own defaults are deliberately different (2 factions,
 # 8 ships); these are the shape a battle is usually watched in while working.
@@ -47,7 +47,7 @@ MAP      ?= arena
 AI       ?= ai/hunter.filo
 TRACE    ?= battle.jsonl
 
-.PHONY: all build build-cross release dist icons run run-window run-ai run-maze garage sim trace \
+.PHONY: all build build-cross release icons run run-window run-ai run-maze garage sim trace \
         check fix fix-inline vet fmt test live qa security tidy clean
 
 all: build
@@ -68,35 +68,28 @@ build-cross: build
 	  done ; \
 	done
 
-# ONE FILE per platform, and that is the whole distribution: the art, the data,
-# the garage's page and the icon all live inside it (go:embed, via the linefire
-# module), so installing is copying a file. No app bundle, no assets folder, no
-# second binary — the garage launches battles by re-running THIS file.
+# The shipped release is the SHARED script (~/Projects/scripts/release.sh,
+# linked here as ./release.sh): every project in the house releases the same
+# way, so the flow lives in one place instead of drifting per repository. It
+# cross-compiles every target locally with CGO_ENABLED=0 — no cgo anywhere,
+# which Ebitengine v2.10 made true for Linux too — builds the signed and
+# notarized universal macOS app from assets/linefire-skirmish.icns, publishes
+# the GitHub release and updates the Homebrew cask. It needs a clean worktree
+# and a tag pointing at HEAD.
 #
-# Linux is missing here on purpose: Ebitengine needs cgo and X11/OpenGL there,
-# which a macOS desk cannot cross-compile. It is built natively when the GitHub
-# Release is published (.github/workflows/release-linux.yml).
-#
-# Each binary is compressed on its own rather than tarred with a README: what
-# is downloaded should be the program, not an archive to go looking inside.
-release: dist
-dist:
-	@rm -rf dist && mkdir -p dist
-	@for t in $(RELEASE_TARGETS); do \
-	  os=$${t%/*}; arch=$${t#*/}; ext=; [ "$$os" = windows ] && ext=.exe; \
-	  name=linefire-skirmish-$$os-$$arch$$ext; \
-	  echo "  -> $$name ($(VERSION))"; \
-	  GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "$(RELEASE_LDFLAGS)" \
-	    -o dist/$$name ./cmd/linefire-skirmish || exit 1 ; \
-	  gzip -9 dist/$$name || exit 1 ; \
-	done
-	@cd dist && shasum -a 256 * > SHA256SUMS && cat SHA256SUMS
+# ONE FILE per platform is still the whole distribution: the art, the data, the
+# garage's page and the icon are all inside it (go:embed, via the linefire
+# module), and the garage launches battles by re-running that same file.
+release:
+	./release.sh
 
-# The icon, written out as PNGs to look at — the only way to judge one.
+# The application icon, drawn from the game's own art (internal/icon names the
+# face; linefire's icon package draws it): the .iconset for iconutil, the .icns
+# the release bundles, and a PNG to look at.
 icons:
-	@mkdir -p dist
-	SKIRMISH_ICON_DIR=$$PWD/dist go test -count 1 -run WriteTheIcons ./internal/icon/
-	@ls dist/*.png
+	go run assets/genicon.go
+	iconutil -c icns assets/linefire-skirmish.iconset -o assets/linefire-skirmish.icns
+	@ls -lh assets/linefire-skirmish.icns assets/linefire-skirmish.png
 
 run:
 	go run $(RUN_FLAGS) ./cmd/linefire-skirmish -play

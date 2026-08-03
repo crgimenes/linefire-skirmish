@@ -19,33 +19,35 @@ arguments and you get the garage; any flag goes straight to the battle.
 
 ## Install
 
-Download the file for your platform from the
-[releases](https://github.com/crgimenes/linefire-skirmish/releases), unpack it,
-make it executable, and run it. There is no installer and no application
-bundle, because there is nothing to install: one file is the whole program.
+The macOS build is a signed, notarized app, so Homebrew is the short path:
 
 ```bash
-gunzip linefire-skirmish-darwin-arm64.gz
-chmod +x linefire-skirmish-darwin-arm64
-./linefire-skirmish-darwin-arm64
+brew install --cask crgimenes/tap/linefire-skirmish
 ```
 
-On **macOS**, a binary downloaded by a browser is quarantined and Gatekeeper
-will refuse to open it — this build is not signed or notarised. Clear the flag
-once:
+Otherwise take the file for your platform from the
+[releases](https://github.com/crgimenes/linefire-skirmish/releases). There is
+no installer and nothing to unpack beside it: one file is the whole program —
+the art, the data, the garage's page and the icon are all inside it.
 
 ```bash
-xattr -d com.apple.quarantine ./linefire-skirmish-darwin-arm64
+gunzip linefire-skirmish-linux-amd64.gz
+chmod +x linefire-skirmish-linux-amd64
+./linefire-skirmish-linux-amd64
 ```
 
-On **Linux**, the battle needs the usual X11/OpenGL/ALSA runtime (any desktop
-has it), and the garage additionally needs a WebKitGTK runtime —
+On **Linux** the battle needs the usual X11/OpenGL/ALSA runtime that any
+desktop has, and the garage additionally needs a WebKitGTK one —
 `libwebkit2gtk-4.1-0` on Debian and Ubuntu, `webkit2gtk4.1` on Fedora. Without
 it the battle still runs from the command line; only the window that configures
 it is missing.
 
-Building from source needs nothing but Go: `make release` writes one compressed
-binary per platform into `dist/`, with `SHA256SUMS` beside them.
+Building from source needs nothing but Go — no cgo on any platform, so one
+machine cross-compiles them all:
+
+```bash
+make build-cross
+```
 
 ## The garage
 
@@ -209,20 +211,21 @@ go run ./cmd/linefire-skirmish -ai ai/hunter.filo -sim 100 -trace battle.jsonl
 
 ## The icon
 
-The application's face is the ship itself — not a drawing of it. The icon is
-rasterized from `gameassets/enemy.lfa`, the same vector hull every faction
-flies, in `game.FactionColor(1)`, the same red the first fleet wears on the
-battlefield. There is no image file in this repository and no art to keep in
-step: an icon that stopped looking like the game would mean the game changed.
+The application's face is the ship itself — not a drawing of it. It is
+rasterized from `enemy.lfa`, the same vector hull every faction flies, in
+`game.FactionColor(1)`, the red the first fleet wears on the battlefield. The
+campaign wears the player's own cyan for the same reason, from the same
+rasterizer (linefire's `icon` package). No image file is kept in step by hand:
+an icon that stopped looking like the game would mean the game changed.
 
 ```bash
-make icons   # writes it out at four sizes, to look at
+make icons   # redraw it, all the way up to the .icns the release bundles
 ```
 
 Windows and Linux draw a window icon, which Ebitengine sets; macOS draws an
-application icon in the Dock, which is process-wide. The icon on the executable
-FILE is a resource compiled into it — still missing on Windows, and the one
-piece of the packaging that is not done.
+application icon in the Dock, and the release bundles the same art into the
+signed app. The icon on the Windows executable FILE is a compiled-in resource
+and is the one piece still missing.
 
 ## License
 
