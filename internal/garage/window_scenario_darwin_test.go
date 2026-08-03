@@ -82,6 +82,7 @@ func pressArrowDown(win objc.ID) {
 func garageKeyScenario() string {
 	report := make(chan string, 1)
 	coords := make(chan [2]float64, 1)
+	ready := make(chan float64, 1)
 	testHook = func(w glaze.WebView) {
 		_ = w.Bind("probe", func(s string) {
 			select {
@@ -96,8 +97,14 @@ func garageKeyScenario() string {
 			default:
 			}
 		})
-		time.AfterFunc(20*time.Second, w.Terminate)
-		go driveGarage(w, coords)
+		_ = w.Bind("ready", func(v float64) {
+			select {
+			case ready <- v:
+			default:
+			}
+		})
+		time.AfterFunc(90*time.Second, w.Terminate)
+		go driveGarage(w, coords, ready)
 	}
 	defer func() { testHook = nil }()
 
@@ -115,18 +122,49 @@ func garageKeyScenario() string {
 	}
 }
 
+// untilReported evaluates js over and over until the page answers on ch. A
+// script that runs too early simply throws (the page has not defined its
+// functions yet) and is retried.
+//
+// Every step here used to be a fixed sleep, which is a guess about a machine.
+// It held on this desk and failed on a CI runner, where the page took longer
+// than the 1.5s allowed for it — a test that reported "the page never said
+// where its tab is" as if the garage were broken. Waiting for the answer
+// instead of for the clock is both faster here and honest there.
+func untilReported[T any](w glaze.WebView, js string, ch chan T, timeout time.Duration) (T, bool) {
+	var zero T
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		w.Eval(js)
+		select {
+		case v := <-ch:
+			return v, true
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+	return zero, false
+}
+
 // driveGarage walks the user's own steps: CLICK the Editor tab, watch the
 // caret blink, press ArrowDown, and ask where the caret ended up.
-func driveGarage(w glaze.WebView, coords chan [2]float64) {
-	// The page, the faction list, and the editor bundle all load first.
-	time.Sleep(1500 * time.Millisecond)
+func driveGarage(w glaze.WebView, coords chan [2]float64, ready chan float64) {
+	// Step one doubles as the wait for the page: the fleet list has to exist
+	// before its tab has a position.
+	pt, ok := untilReported(w, `(function () {
+		var r = document.getElementById('tab-editor').getBoundingClientRect();
+		if (r.width > 0) coords(r.left + r.width / 2, innerHeight - (r.top + r.height / 2));
+	})()`, coords, 45*time.Second)
+	if !ok {
+		w.Eval(`probe('the page never reported the Editor tab position')`)
+		return
+	}
 
 	// The agent affordance, on the real page: a faction switched to an agent
 	// sends its command as commands[0] and gives up its program slot, because
 	// the engine refuses a faction holding both. This is the JS wiring of the
 	// fleet list — a typo here reaches the user as a battle that will not
 	// launch, with the reason on a terminal they do not have open.
-	w.Eval(`(function () {
+	_, ok = untilReported(w, `(function () {
 		toggleAgent(0);
 		var cmd = rows.get(1).querySelector('.cmd');
 		cmd.value = 'python3 bot.py';
@@ -140,32 +178,38 @@ func driveGarage(w glaze.WebView, coords chan [2]float64) {
 			'cmd1=' + s.commands[1],
 		].join(' ');
 		toggleAgent(0);   // back to a program: the rest of the run is the editor
-	})()`)
-	time.Sleep(300 * time.Millisecond)
-	w.Eval(`(function () {
-		var r = document.getElementById('tab-editor').getBoundingClientRect();
-		coords(r.left + r.width / 2, innerHeight - (r.top + r.height / 2));
-	})()`)
-	var pt [2]float64
-	select {
-	case pt = <-coords:
-	case <-time.After(5 * time.Second):
-		w.Eval(`probe('the page never reported the Editor tab position')`)
+		ready(1);
+	})()`, ready, 20*time.Second)
+	if !ok {
+		w.Eval(`probe('the fleet list never answered about its agent row')`)
 		return
 	}
 
 	win := objc.ID(uintptr(w.Window())) // #nosec G103 -- the NSWindow the API hands back
 	w.Dispatch(func() { clickAt(win, pt[0], pt[1]) })
-	time.Sleep(1 * time.Second)
-	// The user's exact test: no repositioning, press ArrowDown right where
-	// opening the editor left the caret. Record where that was.
-	w.Eval(`window.__sel0 = ed ? ed.ta.selectionStart : -1`)
-	time.Sleep(200 * time.Millisecond)
+
+	// The editor is built on the first click into it and then loads the
+	// faction's program, so wait for the buffer to actually be there. The
+	// caret's birthplace is recorded WITHOUT touching it: the user's test is
+	// to press the arrow wherever opening the editor left it.
+	_, ok = untilReported(w, `(function () {
+		if (typeof ed === 'undefined' || !ed || !ed.ta.value) return;
+		window.__sel0 = ed.ta.selectionStart;
+		ready(1);
+	})()`, ready, 20*time.Second)
+	if !ok {
+		w.Eval(`probe('no editor: the click missed the tab')`)
+		return
+	}
 
 	w.Dispatch(func() { pressArrowDown(win) })
-	time.Sleep(500 * time.Millisecond)
+	// The key travels window → first responder → WebKit → DOM, so the caret
+	// moves a moment later; report as soon as it has, and fall through to the
+	// probe with the details when it never does.
+	untilReported(w, `if (ed && ed.ta.selectionStart > 0) ready(ed.ta.selectionStart)`,
+		ready, 10*time.Second)
 
-	w.Eval(`probe(!ed ? 'no editor: the click missed the tab' : [
+	w.Eval(`probe([
 		'sel0=' + window.__sel0,
 		'sel=' + ed.ta.selectionStart,
 		'end=' + ed.ta.value.length,
