@@ -145,15 +145,28 @@ func untilReported[T any](w glaze.WebView, js string, ch chan T, timeout time.Du
 	return zero, false
 }
 
+// tabPositionJS reports the Editor tab's centre in the WINDOW's coordinates
+// (origin bottom-left), which is where a real NSEvent has to be aimed.
+const tabPositionJS = `(function () {
+	var r = document.getElementById('tab-editor').getBoundingClientRect();
+	if (r.width > 0) coords(r.left + r.width / 2, innerHeight - (r.top + r.height / 2));
+})()`
+
+// editorOpenJS answers once the editor exists with a program in it. The
+// caret's birthplace is recorded WITHOUT touching it: the user's test is to
+// press the arrow wherever opening the editor left it.
+const editorOpenJS = `(function () {
+	if (typeof ed === 'undefined' || !ed || !ed.ta.value) return;
+	window.__sel0 = ed.ta.selectionStart;
+	ready(1);
+})()`
+
 // driveGarage walks the user's own steps: CLICK the Editor tab, watch the
 // caret blink, press ArrowDown, and ask where the caret ended up.
 func driveGarage(w glaze.WebView, coords chan [2]float64, ready chan float64) {
 	// Step one doubles as the wait for the page: the fleet list has to exist
 	// before its tab has a position.
-	pt, ok := untilReported(w, `(function () {
-		var r = document.getElementById('tab-editor').getBoundingClientRect();
-		if (r.width > 0) coords(r.left + r.width / 2, innerHeight - (r.top + r.height / 2));
-	})()`, coords, 45*time.Second)
+	_, ok := untilReported(w, tabPositionJS, coords, 45*time.Second)
 	if !ok {
 		w.Eval(`probe('the page never reported the Editor tab position')`)
 		return
@@ -185,20 +198,35 @@ func driveGarage(w glaze.WebView, coords chan [2]float64, ready chan float64) {
 		return
 	}
 
+	// Click the tab, and click it AGAIN if the editor did not open — with the
+	// position read fresh each time. A single aimed click is a bet that the
+	// page's layout stopped moving, and a page that is still settling (fonts,
+	// the editor bundle, a poll repainting the fleet list) moves the target
+	// out from under a point measured a moment earlier. This failed on a CI
+	// runner exactly once, which is how a flaky test announces itself; a user
+	// whose click did nothing would simply click again.
 	win := objc.ID(uintptr(w.Window())) // #nosec G103 -- the NSWindow the API hands back
-	w.Dispatch(func() { clickAt(win, pt[0], pt[1]) })
-
-	// The editor is built on the first click into it and then loads the
-	// faction's program, so wait for the buffer to actually be there. The
-	// caret's birthplace is recorded WITHOUT touching it: the user's test is
-	// to press the arrow wherever opening the editor left it.
-	_, ok = untilReported(w, `(function () {
-		if (typeof ed === 'undefined' || !ed || !ed.ta.value) return;
-		window.__sel0 = ed.ta.selectionStart;
-		ready(1);
-	})()`, ready, 20*time.Second)
-	if !ok {
-		w.Eval(`probe('no editor: the click missed the tab')`)
+	opened := false
+	for range 5 {
+		pt, ok := untilReported(w, tabPositionJS, coords, 10*time.Second)
+		if !ok {
+			break
+		}
+		w.Dispatch(func() { clickAt(win, pt[0], pt[1]) })
+		if _, ok := untilReported(w, editorOpenJS, ready, 5*time.Second); ok {
+			opened = true
+			break
+		}
+	}
+	if !opened {
+		// Report what the page SHOWS rather than guessing at a cause: the
+		// first version of this said "the click missed the tab", which was a
+		// theory printed as a finding.
+		w.Eval(`probe('the editor never opened: ' + [
+			'editorView=' + (document.getElementById('view-editor').hidden ? 'hidden' : 'shown'),
+			'tabOn=' + document.getElementById('tab-editor').classList.contains('on'),
+			'ed=' + (typeof ed === 'undefined' || !ed ? 'none' : 'built'),
+		].join(' '))`)
 		return
 	}
 
