@@ -90,6 +90,51 @@ func TestLiveBattleFillsTheBoard(t *testing.T) {
 	t.Fatal("the garage still reports a battle five seconds after ceasing it")
 }
 
+// Cease ASKS the battle to end, over the channel it is already configured
+// through, and the battle ends itself. The proof is the exit status: a game
+// that left its own loop exits cleanly, while a killed one comes back from
+// Wait as "signal: killed" — which the garage puts on screen in red, so for
+// as long as Cease meant kill, every ordinary stop reported an error for the
+// thing the user had just asked for.
+//
+// It is also the portable half of crg's point: no signals, no per-platform
+// process handling, the same seven bytes everywhere.
+func TestLiveCeaseAsksInsteadOfKilling(t *testing.T) {
+	bin := os.Getenv("SKIRMISH_GAME")
+	if bin == "" {
+		t.Skip("SKIRMISH_GAME is not set: skipping the live battle")
+	}
+	g := newGarage(bin)
+	defer func() { _ = g.Cease() }()
+
+	err := g.Deploy(Setup{Mode: "endless", Map: "arena", Factions: 2, Window: true})
+	if err != nil {
+		t.Fatalf("deploy: %v", err)
+	}
+	// Let the battle really be up: quitting during the launch would prove
+	// nothing about a running game answering its control plane.
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) && g.Status().Launching {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if g.Status().Battles == 0 {
+		t.Fatalf("no battle came up to ask: %+v", g.Status())
+	}
+
+	start := time.Now()
+	if err := g.Cease(); err != nil {
+		t.Fatalf("cease: %v", err)
+	}
+	st := g.Status()
+	if st.Running {
+		t.Fatal("Cease returned with the battle still flying")
+	}
+	if st.LastErr != "" {
+		t.Fatalf("stopping the battle reported %q — it was killed, not asked", st.LastErr)
+	}
+	t.Logf("the battle ended itself in %s", time.Since(start).Round(time.Millisecond))
+}
+
 // Toggling a LAUNCH flag has to replace the process, not reconfigure the one
 // flying: start a battle in a window, uncheck windowed, deploy again, and the
 // window must go away and the battle come back as the overlay. crg asked for
@@ -127,11 +172,12 @@ func TestUncheckingWindowedReplacesTheBattle(t *testing.T) {
 	if second == first {
 		t.Error("the same process kept flying: the window would still be on screen")
 	}
-	// The old one must be GONE, not merely replaced in the garage's hand.
-	alive, known := processAlive(first)
-	if known && alive {
-		t.Errorf("process %d is still alive after being replaced", first)
-	}
+	// The old one being GONE — not merely replaced in the garage's hand — is
+	// what the second Deploy returning nil now MEANS: it refuses to launch
+	// until the previous process has been reaped, and reaped is cmd.Wait
+	// returning, which is the operating system's own word for it. This used to
+	// be a syscall.Kill(pid, 0) probe, which asked the OS the same question in
+	// a way that did not exist on Windows and broke the build there.
 }
 
 // Deploy returns the moment the process starts, but the battle takes seconds

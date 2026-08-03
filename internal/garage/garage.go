@@ -136,7 +136,9 @@ func (g *Garage) Deploy(s Setup) error {
 		if err := g.Cease(); err != nil {
 			return err
 		}
-		g.awaitStopped()
+		if !g.awaitStopped() {
+			return fmt.Errorf("the battle already flying will not stop; a second one would fight over the same screen")
+		}
 	}
 	return g.launch(s)
 }
@@ -177,18 +179,24 @@ func needsRelaunch(old, next Setup) bool {
 	return joinSlots(old.Programs) != joinSlots(next.Programs)
 }
 
-// awaitStopped waits briefly for the killed process to be reaped, so the new
-// battle never starts while the old one still owns the screen.
-func (g *Garage) awaitStopped() {
+// awaitStopped waits briefly for the ended process to be reaped, and reports
+// whether it actually went. Reaped means cmd.Wait returned, which is the
+// operating system's own word that the process is gone — the same fact a
+// signal-0 probe asks for, already delivered, and without a per-platform call.
+//
+// The answer matters: a new battle started while the old one still owns the
+// screen puts two on it.
+func (g *Garage) awaitStopped() bool {
 	for range 50 {
 		g.mu.Lock()
 		gone := g.cmd == nil
 		g.mu.Unlock()
 		if gone {
-			return
+			return true
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	return false
 }
 
 // launchArgs is the setup as the game's own command line. Pure, so what the
@@ -267,14 +275,35 @@ func (g *Garage) pid() int {
 	return g.cmd.Process.Pid
 }
 
-// Cease ends the battle: the game process is stopped and the board freezes on
-// the last standing it reported.
+// Cease ends the battle: the game is ASKED to quit over the control plane, and
+// only killed if it will not. The board freezes on the last standing reported.
+//
+// Asking first is not politeness. It is the same channel the battle is already
+// configured through, so it works the same on every platform — no signals, no
+// per-OS process handling — and the game gets to end on its own loop, closing
+// its own agents' pipes on the way out. Killing is what is left when the ask
+// goes unanswered: a wedged process still has to be stoppable from a button.
+//
+// It also stops LYING to the user. A killed process comes back from Wait as
+// "signal: killed", which the garage dutifully put on screen in red after
+// every single Cease — an error message for the thing the user just asked for.
 func (g *Garage) Cease() error {
 	g.mu.Lock()
 	cmd := g.cmd
 	g.mu.Unlock()
 	if cmd == nil {
 		return nil
+	}
+
+	if err := g.command(map[string]any{"op": "quit"}); err == nil && g.awaitStopped() {
+		return nil
+	}
+
+	g.mu.Lock()
+	still := g.cmd == cmd
+	g.mu.Unlock()
+	if !still {
+		return nil // it went between the ask and the enforcement
 	}
 	return cmd.Process.Kill()
 }

@@ -42,7 +42,8 @@
 //	linefire-skirmish -check t.jsonl   re-run the checker over a saved trace
 //	linefire-skirmish -control     the garage protocol: battle events out on
 //	                               stdout, match commands in on stdin (JSONL);
-//	                               e.g. {"op":"match","mode":"timed","ships":6}
+//	                               e.g. {"op":"match","mode":"timed","ships":6},
+//	                               {"op":"restart"}, {"op":"quit"}
 //	linefire-skirmish -sound       same, with the battle's sound effects (there
 //	                               is no soundtrack here: the songs are the
 //	                               campaign's)
@@ -192,9 +193,10 @@ func checkTraceFile(path string) {
 }
 
 // readControl feeds stdin's JSONL commands to the running game: the garage
-// (or any parent process, or a person with a terminal) reconfigures and
-// restages battles without relaunching the window. Closing stdin just ends
-// the feed — quitting stays the panel's and Ctrl+C's business.
+// (or any parent process, or a person with a terminal) reconfigures, restages
+// and ENDS battles without touching this process from the outside — quitting
+// is {"op":"quit"}, which the game answers by leaving its own loop. Closing
+// stdin only ends the feed; a battle nobody asked to end keeps flying.
 func readControl(g *game.Game) {
 	sc := bufio.NewScanner(os.Stdin)
 	for sc.Scan() {
