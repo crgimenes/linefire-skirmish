@@ -28,7 +28,7 @@ func TestLiveBattleFillsTheBoard(t *testing.T) {
 	g := newGarage(bin)
 	setup := Setup{
 		Mode: "lastfleet", Map: "arena", Factions: 2, Ships: 3,
-		Programs: []string{"../../ai/hunter.filo", ""},
+		Programs: []string{"../ai/hunter.filo", ""},
 		Window:   true, // a real window: the overlay would cover the screen mid-test
 	}
 	if err := g.Deploy(setup); err != nil {

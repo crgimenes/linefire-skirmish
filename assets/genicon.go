@@ -21,7 +21,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/crgimenes/linefire-skirmish/internal/icon"
+	"github.com/crgimenes/linefire-skirmish/icon"
 )
 
 // The sizes an .iconset must carry, in Apple's own naming: each logical size

@@ -12,7 +12,7 @@ import (
 // owns it — so this repo is where it must validate clean against the same
 // function the editor's Validate button calls.
 func TestTheReferenceProgramValidatesClean(t *testing.T) {
-	src, err := os.ReadFile("../../ai/hunter.filo")
+	src, err := os.ReadFile("../ai/hunter.filo")
 	if err != nil {
 		t.Fatalf("reading the reference program: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestTheReferenceProgramValidatesClean(t *testing.T) {
 // report a line a person can read. The reference program should not be
 // slaughtered by the house brain.
 func TestQuickTestFightsAndReports(t *testing.T) {
-	src, err := os.ReadFile("../../ai/hunter.filo")
+	src, err := os.ReadFile("../ai/hunter.filo")
 	if err != nil {
 		t.Fatalf("reading the reference program: %v", err)
 	}

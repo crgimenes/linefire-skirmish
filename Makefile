@@ -83,7 +83,7 @@ build-cross: build
 release:
 	./release.sh
 
-# The application icon, drawn from the game's own art (internal/icon names the
+# The application icon, drawn from the game's own art (icon names the
 # face; linefire's icon package draws it): the .iconset for iconutil, the .icns
 # the release bundles, and a PNG to look at.
 icons:
@@ -143,7 +143,7 @@ live:
 	@mkdir -p bin
 	go build $(BUILD_FLAGS) -o bin/linefire-skirmish-$(GOOS)-$(GOARCH) ./cmd/linefire-skirmish
 	SKIRMISH_GAME=$$PWD/bin/linefire-skirmish-$(GOOS)-$(GOARCH) \
-	  go test -timeout 120s -count 1 -run Live ./internal/garage/
+	  go test -timeout 120s -count 1 -run Live ./garage/
 
 qa: check security build-cross
 

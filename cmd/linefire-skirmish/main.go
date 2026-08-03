@@ -79,8 +79,8 @@ import (
 
 	"github.com/crgimenes/glaze"
 	"github.com/crgimenes/linefire"
-	"github.com/crgimenes/linefire-skirmish/internal/garage"
-	"github.com/crgimenes/linefire-skirmish/internal/icon"
+	"github.com/crgimenes/linefire-skirmish/garage"
+	"github.com/crgimenes/linefire-skirmish/icon"
 	"github.com/crgimenes/linefire/game"
 	"github.com/hajimehoshi/ebiten/v2"
 )
