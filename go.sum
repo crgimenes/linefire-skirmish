@@ -10,6 +10,8 @@ github.com/crgimenes/glaze v0.0.45 h1:pZGCbq6G2BTeC1GtNK6MCcsYBo30K7e9H3jK8Y9QFp
 github.com/crgimenes/glaze v0.0.45/go.mod h1:ZuCIST0F5U6wJLw5ZtqfcTIQA7LI/m2MHv7iMOBmu6U=
 github.com/crgimenes/glaze v0.0.46 h1:5E477vEnBPzo7b5/u8wBvSqPnOj0PuD74VA3089Ns2k=
 github.com/crgimenes/glaze v0.0.46/go.mod h1:01e3XdFpYoifpLRriaAoUbL7laZTh0WQmHTTAMd3tFc=
+github.com/crgimenes/glaze v0.0.47 h1:1k80adEXUsO7z8aGhmXi8gZZv+M60jL9Hd+23p16a9g=
+github.com/crgimenes/glaze v0.0.47/go.mod h1:01e3XdFpYoifpLRriaAoUbL7laZTh0WQmHTTAMd3tFc=
 github.com/crgimenes/linefire v0.0.49 h1:OYZWi0Yu3kjjFK9obwVq7Nv9//k7XjOB+9kKqmX2/mA=
 github.com/crgimenes/linefire v0.0.49/go.mod h1:rdpPg5/8uWn3VP8rbmCF/m3W61GEcK/Nvjp2hiYnitE=
 github.com/crgimenes/linefire v0.0.50 h1:NAjhyzJfT1S5NJgHweEXhxh155pxe1HdeIQQqlFb8do=
