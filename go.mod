@@ -6,14 +6,14 @@ require (
 	github.com/crgimenes/glaze v0.0.54
 	github.com/crgimenes/linefire v0.0.53
 	github.com/ebitengine/purego v0.11.0
-	github.com/hajimehoshi/ebiten/v2 v2.10.2
+	github.com/hajimehoshi/ebiten/v2 v2.10.3
 )
 
 require (
-	github.com/crgimenes/devengine v0.0.10 // indirect
-	github.com/crgimenes/filo v0.0.21 // indirect
+	github.com/crgimenes/devengine v0.0.11 // indirect
+	github.com/crgimenes/filo v0.0.23 // indirect
 	github.com/crgimenes/gion v0.0.5 // indirect
-	github.com/crgimenes/minigui v0.1.10 // indirect
+	github.com/crgimenes/minigui v0.1.11 // indirect
 	github.com/crgimenes/native v0.1.11 // indirect
 	github.com/ebitengine/gomobile v0.0.0-20260820040257-d11f821a26a6 // indirect
 	github.com/ebitengine/hideconsole v1.0.0 // indirect
