@@ -4,16 +4,16 @@ go 1.27.1
 
 require (
 	github.com/crgimenes/glaze v0.0.83
-	github.com/crgimenes/linefire v0.0.55
+	github.com/crgimenes/linefire v0.0.56
 	github.com/ebitengine/purego v0.11.3
-	github.com/hajimehoshi/ebiten/v2 v2.10.5
+	github.com/hajimehoshi/ebiten/v2 v2.10.6
 )
 
 require (
 	github.com/crgimenes/devengine v0.0.11 // indirect
 	github.com/crgimenes/filo v0.1.1 // indirect
-	github.com/crgimenes/gion v0.0.7 // indirect
-	github.com/crgimenes/minigui v0.1.13 // indirect
+	github.com/crgimenes/gion v0.0.8 // indirect
+	github.com/crgimenes/minigui v0.1.14 // indirect
 	github.com/crgimenes/native v0.1.18 // indirect
 	github.com/ebitengine/gomobile v0.0.0-20260820040257-d11f821a26a6 // indirect
 	github.com/ebitengine/hideconsole v1.0.0 // indirect
