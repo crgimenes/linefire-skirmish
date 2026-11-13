@@ -1,18 +1,18 @@
 module github.com/crgimenes/linefire-skirmish
 
-go 1.27.1
+go 1.27.4
 
 require (
 	github.com/crgimenes/glaze v0.0.83
-	github.com/crgimenes/linefire v0.0.57
+	github.com/crgimenes/linefire v0.0.58
 	github.com/ebitengine/purego v0.11.3
 	github.com/hajimehoshi/ebiten/v2 v2.10.6
 )
 
 require (
 	github.com/crgimenes/devengine v0.0.11 // indirect
-	github.com/crgimenes/filo v0.1.2 // indirect
-	github.com/crgimenes/gion v0.0.9 // indirect
+	github.com/crgimenes/filo v0.1.3 // indirect
+	github.com/crgimenes/gion v0.0.10 // indirect
 	github.com/crgimenes/minigui v0.1.15 // indirect
 	github.com/crgimenes/native v0.1.18 // indirect
 	github.com/ebitengine/gomobile v0.0.0-20260820040257-d11f821a26a6 // indirect
