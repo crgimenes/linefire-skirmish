@@ -1,13 +1,13 @@
-github.com/crgimenes/devengine v0.0.13 h1:4sZ1FaN3DSa+HMsh6ewN0lM171+2ub78gVWLaiY/RGM=
-github.com/crgimenes/devengine v0.0.13/go.mod h1:HnHaR+uvjSwypa47exyMXW9K8DChNkUVqksWI+Rx4iw=
+github.com/crgimenes/devengine v0.0.14 h1:e0Fxdjh8xqwLbgLwYg6lCBpSOpfGQtBQBUjymFGEzrQ=
+github.com/crgimenes/devengine v0.0.14/go.mod h1:KUPOOSMQK+DPqz6M7kB0K1p17QOXq6JPCP6CuE+tcPs=
 github.com/crgimenes/filo v0.1.4 h1:/v+6qTs3i48z5sQWAdvVvJWdQQTb3NwVWMNIX9ther8=
 github.com/crgimenes/filo v0.1.4/go.mod h1:at6YbdrYygETZYeRNlqb5MwDHudvAnCHRIlMnfhaM14=
 github.com/crgimenes/gion v0.0.11 h1:6RhxkHUgWxufp4GgOISUeZClaYzqk198jIal447jQTQ=
 github.com/crgimenes/gion v0.0.11/go.mod h1:xs3twVAmSiD3FuG+Q7VgPJJoiDU7bLQfSG85NQleOdw=
 github.com/crgimenes/glaze v0.0.84 h1:THa2E9uR8OyuKPvJIbFIug/Gl/sd8gpetXoOEvB5obQ=
 github.com/crgimenes/glaze v0.0.84/go.mod h1:41rd4sKUekbjd2w9vUSKO4JBf0WKdR1wd+gud5S/agk=
-github.com/crgimenes/linefire v0.0.60 h1:GTu/TJmJWExb2nAvhVGHi49DIx8cqWNokTmwBq3ce7Y=
-github.com/crgimenes/linefire v0.0.60/go.mod h1:K3xyNpdXNZ3SDgEDEsqT9djLMyPN0zLACoSPJmRvZrk=
+github.com/crgimenes/linefire v0.0.61 h1:n+eGHXqAygkg4Pr2/pF32BJnpDdGtdO3JUL6LFVO+ik=
+github.com/crgimenes/linefire v0.0.61/go.mod h1:ev/V0fwUVEhn2DfCuaDrtTQ/gk/Pl9DzoY5XjV2bmFQ=
 github.com/crgimenes/minigui v0.1.15 h1:oo2maAO1BB1W17/BaCcgCJGUrnW+Gfp8nj/vsEoJ6dE=
 github.com/crgimenes/minigui v0.1.15/go.mod h1:DJ8Xiza5klZUfFq8X4So/Xbpf+1njzS+TZiY9ni8CuQ=
 github.com/crgimenes/native v0.1.18 h1:zn0fFlskRWue3UOKhrhuedt07j+XX7wWceNRHEWiTGM=
