@@ -3,14 +3,14 @@ module github.com/crgimenes/linefire-skirmish
 go 1.27.4
 
 require (
-	github.com/crgimenes/glaze v0.0.84
-	github.com/crgimenes/linefire v0.0.61
+	github.com/crgimenes/glaze v0.0.85
+	github.com/crgimenes/linefire v0.0.62
 	github.com/ebitengine/purego v0.11.3
 	github.com/hajimehoshi/ebiten/v2 v2.10.6
 )
 
 require (
-	github.com/crgimenes/devengine v0.0.14 // indirect
+	github.com/crgimenes/devengine v0.0.15 // indirect
 	github.com/crgimenes/filo v0.1.4 // indirect
 	github.com/crgimenes/gion v0.0.11 // indirect
 	github.com/crgimenes/minigui v0.1.15 // indirect
