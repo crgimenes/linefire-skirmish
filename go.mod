@@ -4,13 +4,13 @@ go 1.27.4
 
 require (
 	github.com/crgimenes/glaze v0.0.86
-	github.com/crgimenes/linefire v0.0.63
+	github.com/crgimenes/linefire v0.0.64
 	github.com/ebitengine/purego v0.11.3
 	github.com/hajimehoshi/ebiten/v2 v2.10.6
 )
 
 require (
-	github.com/crgimenes/devengine v0.0.16 // indirect
+	github.com/crgimenes/devengine v0.0.17 // indirect
 	github.com/crgimenes/filo v0.1.5 // indirect
 	github.com/crgimenes/gion v0.0.12 // indirect
 	github.com/crgimenes/minigui v0.1.16 // indirect
